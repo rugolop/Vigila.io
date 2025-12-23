@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: mediamtx
+    ports:
+      - "8554:8554"   # RTSP
+      - "1935:1935"   # RTMP
+      - "8888:8888"   # HLS
+      - "8889:8889"   # WebRTC HTTP
+      - "8189:8189/udp"  # WebRTC ICE
+      - "8890:8890/udp"  # SRT
+      - "9997:9997"   # API
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml
+      - ./recordings:/recordings
+    restart: unless-stopped
+
+  backend:
+    build: ./apps/backend
+    container_name: backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./apps/backend:/app
+      - ./recordings:/recordings
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/smartdvr
+      - MEDIAMTX_API_URL=http://mediamtx:9997
+    depends_on:
+      - postgres
+      - mediamtx
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=smartdvr
+      - POSTGRES_INITDB_ARGS=--auth-host=md5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    command: ["postgres", "-c", "password_encryption=md5"]
+
+volumes:
+  postgres_data:
