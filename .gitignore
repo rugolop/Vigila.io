@@ -52,3 +52,10 @@ venv.bak/
 # Data
 data/
 recordings/
+
+# Dokploy / Docker
+.docker/
+*.log
+
+# Solo mantener archivos de entorno de ejemplo/referencia
+# Los .env.local no se suben (ya están ignorados arriba)

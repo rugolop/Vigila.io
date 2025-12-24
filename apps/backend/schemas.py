@@ -9,17 +9,23 @@ class CameraBase(BaseModel):
     stream_mode: Literal["auto", "direct", "ffmpeg"] = "auto"
 
 class CameraCreate(CameraBase):
-    user_id: Optional[str] = None  # Better Auth user ID
+    user_id: Optional[str] = None  # Better Auth user ID (legacy)
+    tenant_id: Optional[int] = None
+    location_id: Optional[int] = None
 
 class CameraUpdate(BaseModel):
     name: Optional[str] = None
     rtsp_url: Optional[str] = None
     is_active: Optional[bool] = None
     stream_mode: Optional[Literal["auto", "direct", "ffmpeg"]] = None
+    tenant_id: Optional[int] = None
+    location_id: Optional[int] = None
 
 class CameraResponse(CameraBase):
     id: int
     user_id: Optional[str] = None
+    tenant_id: Optional[int] = None
+    location_id: Optional[int] = None
     created_at: datetime
 
     class Config:

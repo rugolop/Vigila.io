@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -21,6 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface DiscoveredCamera {
   ip: string
@@ -33,6 +41,31 @@ interface DiscoveredCamera {
   discovery_method: string
 }
 
+interface Tenant {
+  id: number
+  name: string
+  slug: string
+}
+
+interface Location {
+  id: number
+  name: string
+  tenant_id: number
+}
+
+interface ConnectionTestResult {
+  success: boolean
+  message: string
+  video_info?: {
+    codec: string
+    width: number
+    height: number
+    framerate: string
+  } | null
+}
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+
 export const CameraDiscovery = () => {
   const [discoveredCameras, setDiscoveredCameras] = useState<DiscoveredCamera[]>([])
   const [discovering, setDiscovering] = useState(false)
@@ -41,13 +74,86 @@ export const CameraDiscovery = () => {
   const [selectedUrls, setSelectedUrls] = useState<Record<string, string>>({})
   const [useOnvif, setUseOnvif] = useState(true)
   const [usePortScan, setUsePortScan] = useState(true)
+  
+  // Tenant and Location state
+  const [tenants, setTenants] = useState<Tenant[]>([])
+  const [locations, setLocations] = useState<Location[]>([])
+  
+  // Add camera dialog state
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [selectedDiscoveredCamera, setSelectedDiscoveredCamera] = useState<DiscoveredCamera | null>(null)
+  const [customCameraName, setCustomCameraName] = useState("")
+  const [dialogTenantId, setDialogTenantId] = useState("")
+  const [dialogLocationId, setDialogLocationId] = useState("")
+  
+  // Connection test state
+  const [testingConnection, setTestingConnection] = useState(false)
+  const [connectionResult, setConnectionResult] = useState<ConnectionTestResult | null>(null)
+
+  // Fetch tenants
+  const fetchTenants = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/tenants`)
+      if (response.ok) {
+        const data = await response.json()
+        setTenants(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch tenants", error)
+    }
+  }
+
+  // Fetch locations
+  const fetchLocations = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/locations`)
+      if (response.ok) {
+        const data = await response.json()
+        setLocations(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch locations", error)
+    }
+  }
+
+  // Get filtered locations for dialog
+  const getDialogFilteredLocations = () => {
+    if (dialogTenantId) {
+      return locations.filter(loc => loc.tenant_id === parseInt(dialogTenantId))
+    }
+    return []
+  }
+
+  // Test RTSP connection
+  const testRtspConnection = async (url: string) => {
+    setTestingConnection(true)
+    setConnectionResult(null)
+    try {
+      const response = await fetch(`${API_URL}/cameras/test-rtsp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rtsp_url: url }),
+      })
+      const data = await response.json()
+      setConnectionResult(data)
+    } catch (error) {
+      setConnectionResult({ success: false, message: "Error de conexión al servidor" })
+    } finally {
+      setTestingConnection(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchTenants()
+    fetchLocations()
+  }, [])
 
   const discoverCameras = async () => {
     setDiscovering(true)
     setDiscoveredCameras([])
     try {
       const response = await fetch(
-        `http://localhost:8001/cameras/discover?use_onvif=${useOnvif}&use_port_scan=${usePortScan}&network_range=${encodeURIComponent(networkRange)}`,
+        `${API_URL}/cameras/discover?use_onvif=${useOnvif}&use_port_scan=${usePortScan}&network_range=${encodeURIComponent(networkRange)}`,
         { method: "POST" }
       )
       if (response.ok) {
@@ -70,35 +176,60 @@ export const CameraDiscovery = () => {
     }
   }
 
-  const addDiscoveredCamera = async (camera: DiscoveredCamera) => {
-    const rtspUrl = selectedUrls[camera.ip]
-    if (!rtspUrl) return
-
-    setAddingCamera(camera.ip)
-    try {
-      const cameraName = camera.name || camera.manufacturer 
+  // Open add dialog
+  const openAddDialog = (camera: DiscoveredCamera) => {
+    setSelectedDiscoveredCamera(camera)
+    setCustomCameraName(
+      camera.name || camera.manufacturer 
         ? `${camera.manufacturer || "Camera"} ${camera.model || ""} (${camera.ip.split('.').pop()})`
         : `Cámara ${camera.ip.split('.').pop()}`
-      
-      const response = await fetch("http://localhost:8001/cameras/", {
+    )
+    setDialogTenantId("")
+    setDialogLocationId("")
+    setConnectionResult(null)
+    setAddDialogOpen(true)
+  }
+
+  // Add discovered camera with dialog data
+  const handleAddDiscoveredCamera = async () => {
+    if (!selectedDiscoveredCamera) return
+    
+    const rtspUrl = selectedUrls[selectedDiscoveredCamera.ip]
+    if (!rtspUrl) return
+
+    setAddingCamera(selectedDiscoveredCamera.ip)
+    try {
+      const response = await fetch(`${API_URL}/cameras/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: cameraName.trim(),
+          name: customCameraName.trim(),
           rtsp_url: rtspUrl,
           is_active: true,
+          tenant_id: dialogTenantId ? parseInt(dialogTenantId) : null,
+          location_id: dialogLocationId ? parseInt(dialogLocationId) : null,
         }),
       })
 
       if (response.ok) {
         // Remove from discovered list
-        setDiscoveredCameras(prev => prev.filter(c => c.ip !== camera.ip))
+        setDiscoveredCameras(prev => prev.filter(c => c.ip !== selectedDiscoveredCamera.ip))
+        setAddDialogOpen(false)
+        setSelectedDiscoveredCamera(null)
+      } else {
+        const error = await response.json()
+        alert(error.detail || "Error al agregar la cámara")
       }
     } catch (error) {
       console.error("Failed to add discovered camera", error)
     } finally {
       setAddingCamera(null)
     }
+  }
+
+  const addDiscoveredCamera = async (camera: DiscoveredCamera) => {
+    // Open dialog instead of adding directly
+    openAddDialog(camera)
   }
 
   const addAllCameras = async () => {
@@ -296,6 +427,115 @@ export const CameraDiscovery = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Add Discovered Camera Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={(open) => !open && setAddDialogOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Agregar Cámara Descubierta</DialogTitle>
+            <DialogDescription>
+              Personaliza el nombre y asigna la organización/ubicación
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="custom-name">Nombre de Cámara</Label>
+              <Input
+                id="custom-name"
+                value={customCameraName}
+                onChange={(e) => setCustomCameraName(e.target.value)}
+                placeholder="Nombre personalizado"
+              />
+            </div>
+            
+            <div className="grid gap-2">
+              <Label>URL RTSP</Label>
+              <code className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded break-all">
+                {selectedDiscoveredCamera && selectedUrls[selectedDiscoveredCamera.ip]}
+              </code>
+            </div>
+            
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>Organización (Tenant)</Label>
+                <Select value={dialogTenantId} onValueChange={setDialogTenantId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar organización" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id.toString()}>
+                        {tenant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Ubicación</Label>
+                <Select 
+                  value={dialogLocationId} 
+                  onValueChange={setDialogLocationId}
+                  disabled={!dialogTenantId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={dialogTenantId ? "Seleccionar ubicación" : "Primero seleccione organización"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getDialogFilteredLocations().map((location) => (
+                      <SelectItem key={location.id} value={location.id.toString()}>
+                        {location.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div className="flex gap-2 items-center flex-wrap">
+              <Button 
+                type="button" 
+                variant="outline"
+                size="sm"
+                disabled={testingConnection || !selectedDiscoveredCamera || !selectedUrls[selectedDiscoveredCamera?.ip || ""]}
+                onClick={() => {
+                  if (selectedDiscoveredCamera) {
+                    const url = selectedUrls[selectedDiscoveredCamera.ip]
+                    if (url) testRtspConnection(url)
+                  }
+                }}
+              >
+                {testingConnection ? "Probando..." : "Probar Conexión"}
+              </Button>
+              
+              {connectionResult && (
+                <span className={`text-sm ${connectionResult.success ? "text-green-600" : "text-red-600"}`}>
+                  {connectionResult.success ? "✓ " : "✗ "}
+                  {connectionResult.message}
+                  {connectionResult.video_info && (
+                    <span className="ml-2 text-gray-500">
+                      ({connectionResult.video_info.codec} {connectionResult.video_info.width}x{connectionResult.video_info.height})
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleAddDiscoveredCamera} 
+              disabled={addingCamera !== null || !customCameraName}
+            >
+              {addingCamera ? "Agregando..." : "Agregar Cámara"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

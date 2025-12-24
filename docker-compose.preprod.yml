@@ -1,0 +1,75 @@
+# =============================================================================
+# Vigila.io - Docker Compose para Pre-Producción (Dokploy)
+# =============================================================================
+# Este archivo es para referencia. En Dokploy se configura cada servicio por separado.
+# Rama: preprod
+
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: vigila-web-preprod
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - DATABASE_URL=${DATABASE_URL_AUTH}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile.prod
+    container_name: vigila-backend-preprod
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - MEDIAMTX_API_URL=http://mediamtx:9997
+      - ENVIRONMENT=preprod
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    volumes:
+      - recordings_preprod:/recordings
+    depends_on:
+      - postgres
+      - mediamtx
+    restart: unless-stopped
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: vigila-mediamtx-preprod
+    ports:
+      - "8554:8554"
+      - "1935:1935"
+      - "8888:8888"
+      - "8889:8889"
+      - "8189:8189/udp"
+      - "8890:8890/udp"
+      - "9997:9997"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml
+      - recordings_preprod:/recordings
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: vigila-postgres-preprod
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data_preprod:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data_preprod:
+  recordings_preprod:

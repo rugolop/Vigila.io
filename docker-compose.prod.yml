@@ -1,0 +1,83 @@
+# =============================================================================
+# Vigila.io - Docker Compose para Producción (Dokploy)
+# =============================================================================
+# Este archivo es para referencia. En Dokploy se configura cada servicio por separado.
+# Rama: main
+
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: vigila-web-prod
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - DATABASE_URL=${DATABASE_URL_AUTH}
+    depends_on:
+      - backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile.prod
+    container_name: vigila-backend-prod
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - MEDIAMTX_API_URL=http://mediamtx:9997
+      - ENVIRONMENT=production
+      - CORS_ORIGINS=${CORS_ORIGINS}
+    volumes:
+      - recordings_prod:/recordings
+    depends_on:
+      - postgres
+      - mediamtx
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest-ffmpeg
+    container_name: vigila-mediamtx-prod
+    ports:
+      - "8554:8554"
+      - "1935:1935"
+      - "8888:8888"
+      - "8889:8889"
+      - "8189:8189/udp"
+      - "8890:8890/udp"
+      - "9997:9997"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml
+      - recordings_prod:/recordings
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: vigila-postgres-prod
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data_prod:
+  recordings_prod:

@@ -11,7 +11,7 @@ from glob import glob
 from pathlib import Path
 
 from database import get_db
-from models import RecordingLog, Camera
+from models import RecordingLog, Camera, Tenant, Location
 from schemas import RecordingLogResponse
 from pydantic import BaseModel
 
@@ -23,6 +23,8 @@ router = APIRouter(
 
 class RecordingSearchParams(BaseModel):
     camera_id: Optional[int] = None  # None = all cameras
+    tenant_id: Optional[int] = None  # Filter by tenant
+    location_id: Optional[int] = None  # Filter by location
     date: Optional[str] = None       # YYYY-MM-DD format
     start_time: Optional[str] = None # HH:MM format
     end_time: Optional[str] = None   # HH:MM format
@@ -34,6 +36,8 @@ class RecordingInfo(BaseModel):
     id: str
     camera_id: int
     camera_name: str
+    tenant_id: Optional[int] = None
+    location_id: Optional[int] = None
     folder_name: str  # Added to help with file operations
     filename: str
     start_time: datetime
@@ -70,32 +74,139 @@ def parse_recording_filename(filename: str) -> Optional[datetime]:
         return None
 
 
+def get_camera_recording_path(camera: Camera) -> str:
+    """
+    Get the recording path for a camera based on tenant/location structure.
+    
+    New structure: /recordings/tenant_{id}/location_{id}/camera_{id}
+    Legacy structure: /recordings/{camera_name}
+    
+    Returns the path that exists, preferring new structure.
+    """
+    base_path = "/recordings"
+    
+    # New structure with tenant/location
+    if camera.tenant_id and camera.location_id:
+        new_path = os.path.join(
+            base_path, 
+            f"tenant_{camera.tenant_id}",
+            f"location_{camera.location_id}",
+            f"camera_{camera.id}"
+        )
+        if os.path.exists(new_path):
+            return new_path
+    
+    # Try camera ID based path
+    camera_id_path = os.path.join(base_path, f"camera_{camera.id}")
+    if os.path.exists(camera_id_path):
+        return camera_id_path
+    
+    # Legacy: camera name based path
+    legacy_path = os.path.join(base_path, sanitize_name(camera.name))
+    if os.path.exists(legacy_path):
+        return legacy_path
+    
+    # Return new path as default for creation
+    if camera.tenant_id and camera.location_id:
+        return os.path.join(
+            base_path,
+            f"tenant_{camera.tenant_id}",
+            f"location_{camera.location_id}",
+            f"camera_{camera.id}"
+        )
+    
+    # Fallback to camera name
+    return os.path.join(base_path, sanitize_name(camera.name))
+
+
+def ensure_recording_directory(camera: Camera) -> str:
+    """Create and return the recording directory for a camera."""
+    path = get_camera_recording_path(camera)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 @router.get("/cameras-with-recordings")
-async def get_cameras_with_recordings(db: AsyncSession = Depends(get_db)):
+async def get_cameras_with_recordings(
+    tenant_id: Optional[int] = Query(None, description="Filter by tenant ID"),
+    db: AsyncSession = Depends(get_db)
+):
     """Get list of cameras that have recordings available."""
     base_path = "/recordings"
     cameras_with_recordings = []
     
-    # Get all cameras from database
-    result = await db.execute(select(Camera))
-    cameras = {sanitize_name(c.name): c for c in result.scalars().all()}
+    # Get all cameras from database with optional tenant filter
+    query = select(Camera)
+    if tenant_id:
+        query = query.filter(Camera.tenant_id == tenant_id)
+    result = await db.execute(query)
+    cameras = result.scalars().all()
     
-    # Check which folders exist in recordings
+    # Build lookup for both new and legacy structures
+    camera_by_name = {sanitize_name(c.name): c for c in cameras}
+    camera_by_id = {c.id: c for c in cameras}
+    
+    processed_cameras = set()
+    
+    # Check new structure: /recordings/tenant_X/location_X/camera_X
     if os.path.exists(base_path):
+        for tenant_folder in os.listdir(base_path):
+            if tenant_folder.startswith("tenant_"):
+                tenant_path = os.path.join(base_path, tenant_folder)
+                if not os.path.isdir(tenant_path):
+                    continue
+                    
+                for location_folder in os.listdir(tenant_path):
+                    if location_folder.startswith("location_"):
+                        location_path = os.path.join(tenant_path, location_folder)
+                        if not os.path.isdir(location_path):
+                            continue
+                            
+                        for camera_folder in os.listdir(location_path):
+                            if camera_folder.startswith("camera_"):
+                                camera_path = os.path.join(location_path, camera_folder)
+                                if not os.path.isdir(camera_path):
+                                    continue
+                                
+                                # Extract camera ID
+                                try:
+                                    cam_id = int(camera_folder.replace("camera_", ""))
+                                except ValueError:
+                                    continue
+                                
+                                camera = camera_by_id.get(cam_id)
+                                if not camera:
+                                    continue
+                                
+                                recordings = glob(os.path.join(camera_path, "*.mp4"))
+                                if recordings:
+                                    processed_cameras.add(camera.id)
+                                    cameras_with_recordings.append({
+                                        "folder_name": f"{tenant_folder}/{location_folder}/{camera_folder}",
+                                        "camera_id": camera.id,
+                                        "camera_name": camera.name,
+                                        "tenant_id": camera.tenant_id,
+                                        "location_id": camera.location_id,
+                                        "recording_count": len(recordings)
+                                    })
+        
+        # Check legacy structure: /recordings/{camera_name}
         for folder_name in os.listdir(base_path):
             folder_path = os.path.join(base_path, folder_name)
-            if os.path.isdir(folder_path):
-                # Check if has any recordings
-                recordings = glob(os.path.join(folder_path, "*.mp4"))
-                if recordings:
-                    # Find matching camera
-                    camera = cameras.get(folder_name)
-                    cameras_with_recordings.append({
-                        "folder_name": folder_name,
-                        "camera_id": camera.id if camera else None,
-                        "camera_name": camera.name if camera else folder_name,
-                        "recording_count": len(recordings)
-                    })
+            if os.path.isdir(folder_path) and not folder_name.startswith(("tenant_", "camera_")):
+                # Legacy folder with camera name
+                camera = camera_by_name.get(folder_name)
+                if camera and camera.id not in processed_cameras:
+                    recordings = glob(os.path.join(folder_path, "*.mp4"))
+                    if recordings:
+                        cameras_with_recordings.append({
+                            "folder_name": folder_name,
+                            "camera_id": camera.id,
+                            "camera_name": camera.name,
+                            "tenant_id": camera.tenant_id,
+                            "location_id": camera.location_id,
+                            "recording_count": len(recordings)
+                        })
     
     return cameras_with_recordings
 
@@ -107,14 +218,23 @@ def sanitize_name(name: str) -> str:
 
 def parse_recording_id(recording_id: str) -> tuple[str, str]:
     """
-    Parse recording ID to extract folder_name and filename.
-    ID format: {folder_name}::{filename}
+    Parse recording ID to extract folder_path and filename.
+    ID format: {folder_path}::{filename}
+    folder_path can contain subdirectories like tenant_1/location_1/camera_1
     """
     if "::" not in recording_id:
-        raise ValueError("Invalid recording ID format. Expected 'folder_name::filename'")
+        raise ValueError("Invalid recording ID format. Expected 'folder_path::filename'")
     
     parts = recording_id.split("::", 1)
     return parts[0], parts[1]
+
+
+def get_recording_file_path(folder_path: str, filename: str) -> str:
+    """Get the full file path for a recording."""
+    base_path = "/recordings"
+    # Normalize path separators
+    normalized_folder = folder_path.replace("/", os.sep).replace("\\", os.sep)
+    return os.path.join(base_path, normalized_folder, filename)
 
 
 @router.post("/search", response_model=PaginatedRecordings)
@@ -126,6 +246,8 @@ async def search_recordings(
     Search recordings with filters and pagination.
     
     - camera_id: Filter by specific camera (optional, None = all cameras)
+    - tenant_id: Filter by tenant (optional)
+    - location_id: Filter by location (optional)
     - date: Filter by date in YYYY-MM-DD format (optional)
     - start_time: Filter recordings after this time HH:MM (optional)
     - end_time: Filter recordings before this time HH:MM (optional)
@@ -135,26 +257,17 @@ async def search_recordings(
     base_path = "/recordings"
     all_results: List[RecordingInfo] = []
     
-    # Get cameras from database for name mapping
-    result = await db.execute(select(Camera))
-    cameras = {sanitize_name(c.name): c for c in result.scalars().all()}
-    
-    # Determine which folders to search
-    folders_to_search = []
+    # Build camera query with filters
+    query = select(Camera)
+    if params.tenant_id:
+        query = query.filter(Camera.tenant_id == params.tenant_id)
+    if params.location_id:
+        query = query.filter(Camera.location_id == params.location_id)
     if params.camera_id:
-        # Find specific camera
-        camera_result = await db.execute(select(Camera).filter(Camera.id == params.camera_id))
-        camera = camera_result.scalars().first()
-        if camera:
-            folder_name = sanitize_name(camera.name)
-            folders_to_search.append((folder_name, camera))
-    else:
-        # Search all folders
-        if os.path.exists(base_path):
-            for folder_name in os.listdir(base_path):
-                if os.path.isdir(os.path.join(base_path, folder_name)):
-                    camera = cameras.get(folder_name)
-                    folders_to_search.append((folder_name, camera))
+        query = query.filter(Camera.id == params.camera_id)
+    
+    result = await db.execute(query)
+    cameras = result.scalars().all()
     
     # Parse date filter
     filter_date = None
@@ -180,13 +293,14 @@ async def search_recordings(
         except (ValueError, IndexError):
             pass
     
-    # Search recordings
-    for folder_name, camera in folders_to_search:
-        folder_path = os.path.join(base_path, folder_name)
-        if not os.path.exists(folder_path):
+    # Search recordings for each camera
+    for camera in cameras:
+        recording_path = get_camera_recording_path(camera)
+        
+        if not os.path.exists(recording_path):
             continue
         
-        for filepath in glob(os.path.join(folder_path, "*.mp4")):
+        for filepath in glob(os.path.join(recording_path, "*.mp4")):
             filename = os.path.basename(filepath)
             recording_time = parse_recording_filename(filename)
             
@@ -213,17 +327,22 @@ async def search_recordings(
                 file_size_mb = 0
                 duration = 0
             
-            # Create result entry with new ID format using :: separator
+            # Get relative path from base for folder_name
+            relative_path = os.path.relpath(recording_path, base_path)
+            
+            # Create result entry
             all_results.append(RecordingInfo(
-                id=f"{folder_name}::{filename}",
-                camera_id=camera.id if camera else 0,
-                camera_name=camera.name if camera else folder_name,
-                folder_name=folder_name,
+                id=f"{relative_path}::{filename}",
+                camera_id=camera.id,
+                camera_name=camera.name,
+                tenant_id=camera.tenant_id,
+                location_id=camera.location_id,
+                folder_name=relative_path,
                 filename=filename,
                 start_time=recording_time,
                 duration_seconds=duration,
                 file_size_mb=round(file_size_mb, 2),
-                file_path=f"http://localhost:8001/media/{folder_name}/{filename}"
+                file_path=f"http://localhost:8001/media/{relative_path.replace(os.sep, '/')}/{filename}"
             ))
     
     # Sort by start_time descending (newest first)
@@ -254,8 +373,7 @@ async def get_available_dates(camera_id: int, db: AsyncSession = Depends(get_db)
     if not camera:
         raise HTTPException(status_code=404, detail="Camera not found")
     
-    folder_name = sanitize_name(camera.name)
-    folder_path = os.path.join("/recordings", folder_name)
+    folder_path = get_camera_recording_path(camera)
     
     dates = set()
     if os.path.exists(folder_path):
@@ -270,10 +388,10 @@ async def get_available_dates(camera_id: int, db: AsyncSession = Depends(get_db)
 
 @router.delete("/{recording_id:path}")
 async def delete_recording(recording_id: str):
-    """Delete a recording file. ID format: folder_name::filename"""
+    """Delete a recording file. ID format: folder_path::filename"""
     try:
-        folder_name, filename = parse_recording_id(recording_id)
-        file_path = os.path.join("/recordings", folder_name, filename)
+        folder_path, filename = parse_recording_id(recording_id)
+        file_path = get_recording_file_path(folder_path, filename)
         
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail=f"Recording not found: {file_path}")
@@ -288,14 +406,14 @@ async def delete_recording(recording_id: str):
 
 @router.post("/delete-bulk")
 async def delete_recordings_bulk(recording_ids: List[str]):
-    """Delete multiple recordings at once. IDs format: folder_name::filename"""
+    """Delete multiple recordings at once. IDs format: folder_path::filename"""
     deleted = []
     errors = []
     
     for recording_id in recording_ids:
         try:
-            folder_name, filename = parse_recording_id(recording_id)
-            file_path = os.path.join("/recordings", folder_name, filename)
+            folder_path, filename = parse_recording_id(recording_id)
+            file_path = get_recording_file_path(folder_path, filename)
             
             if os.path.exists(file_path):
                 os.remove(file_path)
@@ -314,10 +432,19 @@ async def delete_recordings_bulk(recording_ids: List[str]):
     }
 
 
-@router.get("/download/{folder_name}/{filename}")
-async def download_recording(folder_name: str, filename: str):
-    """Download a single recording file as compressed zip."""
-    file_path = os.path.join("/recordings", folder_name, filename)
+@router.get("/download/{folder_path:path}")
+async def download_recording(folder_path: str):
+    """Download a single recording file as compressed zip. Path includes filename."""
+    # folder_path is something like "tenant_1/location_1/camera_1/filename.mp4"
+    # or legacy "camera_name/filename.mp4"
+    
+    # Split the path to get folder and filename
+    parts = folder_path.rsplit("/", 1)
+    if len(parts) != 2 or not parts[1].endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="Invalid path format")
+    
+    folder, filename = parts
+    file_path = get_recording_file_path(folder, filename)
     
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Recording not found")
@@ -351,12 +478,12 @@ async def download_recordings_bulk(request: BulkDownloadRequest):
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
         for recording_id in request.recording_ids:
             try:
-                folder_name, filename = parse_recording_id(recording_id)
-                file_path = os.path.join("/recordings", folder_name, filename)
+                folder_path, filename = parse_recording_id(recording_id)
+                file_path = get_recording_file_path(folder_path, filename)
                 
                 if os.path.exists(file_path):
                     # Add to zip with folder structure
-                    archive_name = f"{folder_name}/{filename}"
+                    archive_name = f"{folder_path.replace(os.sep, '/')}/{filename}"
                     zip_file.write(file_path, archive_name)
             except ValueError:
                 continue  # Skip invalid IDs

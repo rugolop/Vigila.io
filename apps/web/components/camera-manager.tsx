@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -13,6 +13,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 interface Camera {
   id: number
@@ -20,7 +35,22 @@ interface Camera {
   rtsp_url: string
   is_active: boolean
   stream_mode?: string
+  tenant_id?: number
+  location_id?: number
   created_at: string
+}
+
+interface Tenant {
+  id: number
+  name: string
+  slug: string
+}
+
+interface Location {
+  id: number
+  name: string
+  address?: string
+  tenant_id: number
 }
 
 interface DiscoveredCamera {
@@ -34,21 +64,114 @@ interface DiscoveredCamera {
   discovery_method: string
 }
 
+interface ConnectionTestResult {
+  success: boolean
+  message: string
+  video_info?: {
+    codec: string
+    width: number
+    height: number
+    framerate: string
+  } | null
+}
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+
 export const CameraManager = () => {
   const [cameras, setCameras] = useState<Camera[]>([])
   const [newCameraName, setNewCameraName] = useState("")
   const [newCameraUrl, setNewCameraUrl] = useState("")
   const [loading, setLoading] = useState(false)
   
+  // Tenant and Location state
+  const [tenants, setTenants] = useState<Tenant[]>([])
+  const [locations, setLocations] = useState<Location[]>([])
+  const [selectedTenantId, setSelectedTenantId] = useState<string>("")
+  const [selectedLocationId, setSelectedLocationId] = useState<string>("")
+  const [filteredLocations, setFilteredLocations] = useState<Location[]>([])
+  
   // Discovery state
   const [discoveredCameras, setDiscoveredCameras] = useState<DiscoveredCamera[]>([])
   const [discovering, setDiscovering] = useState(false)
   const [networkRange, setNetworkRange] = useState("192.168.1.0/24")
   const [addingCamera, setAddingCamera] = useState<string | null>(null)
+  
+  // Edit state
+  const [editingCamera, setEditingCamera] = useState<Camera | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editUrl, setEditUrl] = useState("")
+  const [editMode, setEditMode] = useState("")
+  const [editTenantId, setEditTenantId] = useState<string>("")
+  const [editLocationId, setEditLocationId] = useState<string>("")
+  const [saving, setSaving] = useState(false)
+  
+  // Add discovered camera with custom name
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [selectedDiscoveredCamera, setSelectedDiscoveredCamera] = useState<DiscoveredCamera | null>(null)
+  const [selectedRtspUrl, setSelectedRtspUrl] = useState("")
+  const [customCameraName, setCustomCameraName] = useState("")
+  const [dialogTenantId, setDialogTenantId] = useState<string>("")
+  const [dialogLocationId, setDialogLocationId] = useState<string>("")
+  
+  // Connection test state
+  const [testingConnection, setTestingConnection] = useState(false)
+  const [connectionResult, setConnectionResult] = useState<ConnectionTestResult | null>(null)
+
+  // Fetch tenants
+  const fetchTenants = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/tenants`)
+      if (response.ok) {
+        const data = await response.json()
+        setTenants(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch tenants", error)
+    }
+  }
+
+  // Fetch locations
+  const fetchLocations = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/locations`)
+      if (response.ok) {
+        const data = await response.json()
+        setLocations(data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch locations", error)
+    }
+  }
+
+  // Filter locations by tenant
+  useEffect(() => {
+    if (selectedTenantId) {
+      setFilteredLocations(locations.filter(loc => loc.tenant_id === parseInt(selectedTenantId)))
+    } else {
+      setFilteredLocations([])
+    }
+    setSelectedLocationId("")
+  }, [selectedTenantId, locations])
+
+  // Get filtered locations for edit dialog
+  const getEditFilteredLocations = () => {
+    if (editTenantId) {
+      return locations.filter(loc => loc.tenant_id === parseInt(editTenantId))
+    }
+    return []
+  }
+
+  // Get filtered locations for add discovered dialog
+  const getDialogFilteredLocations = () => {
+    if (dialogTenantId) {
+      return locations.filter(loc => loc.tenant_id === parseInt(dialogTenantId))
+    }
+    return []
+  }
 
   const fetchCameras = async () => {
     try {
-      const response = await fetch("http://localhost:8001/cameras/")
+      const response = await fetch(`${API_URL}/cameras/`)
       if (response.ok) {
         const data = await response.json()
         setCameras(data)
@@ -62,7 +185,7 @@ export const CameraManager = () => {
     setDiscovering(true)
     try {
       const response = await fetch(
-        `http://localhost:8001/cameras/discover?use_onvif=true&use_port_scan=true&network_range=${encodeURIComponent(networkRange)}`,
+        `${API_URL}/cameras/discover?use_onvif=true&use_port_scan=true&network_range=${encodeURIComponent(networkRange)}`,
         { method: "POST" }
       )
       if (response.ok) {
@@ -76,27 +199,64 @@ export const CameraManager = () => {
     }
   }
 
-  const addDiscoveredCamera = async (camera: DiscoveredCamera, rtspUrl: string) => {
-    setAddingCamera(camera.ip)
+  const testRtspConnection = async (rtspUrl: string) => {
+    setTestingConnection(true)
+    setConnectionResult(null)
     try {
-      const cameraName = camera.name || camera.manufacturer 
+      const response = await fetch(`${API_URL}/cameras/test-rtsp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rtsp_url: rtspUrl, timeout: 5 }),
+      })
+      if (response.ok) {
+        const result = await response.json()
+        setConnectionResult(result)
+      } else {
+        setConnectionResult({ success: false, message: "Error al probar conexión" })
+      }
+    } catch (error) {
+      setConnectionResult({ success: false, message: "Error de red" })
+    } finally {
+      setTestingConnection(false)
+    }
+  }
+
+  const openAddDialog = (camera: DiscoveredCamera, rtspUrl: string) => {
+    setSelectedDiscoveredCamera(camera)
+    setSelectedRtspUrl(rtspUrl)
+    setCustomCameraName(
+      camera.name || camera.manufacturer 
         ? `${camera.manufacturer || "Camera"} ${camera.ip.split('.').pop()}`
         : `Camera ${camera.ip.split('.').pop()}`
-      
-      const response = await fetch("http://localhost:8001/cameras/", {
+    )
+    setDialogTenantId("")
+    setDialogLocationId("")
+    setConnectionResult(null)
+    setAddDialogOpen(true)
+  }
+
+  const handleAddDiscoveredCamera = async () => {
+    if (!selectedDiscoveredCamera) return
+    
+    setAddingCamera(selectedDiscoveredCamera.ip)
+    try {
+      const response = await fetch(`${API_URL}/cameras/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: cameraName,
-          rtsp_url: rtspUrl,
+          name: customCameraName,
+          rtsp_url: selectedRtspUrl,
           is_active: true,
+          tenant_id: dialogTenantId ? parseInt(dialogTenantId) : null,
+          location_id: dialogLocationId ? parseInt(dialogLocationId) : null,
         }),
       })
 
       if (response.ok) {
         fetchCameras()
-        // Remove from discovered list
-        setDiscoveredCameras(prev => prev.filter(c => c.ip !== camera.ip))
+        setDiscoveredCameras(prev => prev.filter(c => c.ip !== selectedDiscoveredCamera.ip))
+        setAddDialogOpen(false)
+        setSelectedDiscoveredCamera(null)
       }
     } catch (error) {
       console.error("Failed to add discovered camera", error)
@@ -105,11 +265,16 @@ export const CameraManager = () => {
     }
   }
 
+  const addDiscoveredCamera = async (camera: DiscoveredCamera, rtspUrl: string) => {
+    // Open dialog instead of adding directly
+    openAddDialog(camera, rtspUrl)
+  }
+
   const handleAddCamera = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
-      const response = await fetch("http://localhost:8001/cameras/", {
+      const response = await fetch(`${API_URL}/cameras/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -118,13 +283,21 @@ export const CameraManager = () => {
           name: newCameraName,
           rtsp_url: newCameraUrl,
           is_active: true,
+          tenant_id: selectedTenantId ? parseInt(selectedTenantId) : null,
+          location_id: selectedLocationId ? parseInt(selectedLocationId) : null,
         }),
       })
 
       if (response.ok) {
         setNewCameraName("")
         setNewCameraUrl("")
+        setSelectedTenantId("")
+        setSelectedLocationId("")
+        setConnectionResult(null)
         fetchCameras()
+      } else {
+        const error = await response.json()
+        alert(error.detail || "Error al agregar la cámara")
       }
     } catch (error) {
       console.error("Failed to add camera", error)
@@ -134,12 +307,12 @@ export const CameraManager = () => {
   }
 
   const handleDeleteCamera = async (cameraId: number) => {
-    if (!confirm("Are you sure you want to delete this camera?")) {
+    if (!confirm("¿Estás seguro de que deseas eliminar esta cámara?")) {
       return
     }
 
     try {
-      const response = await fetch(`http://localhost:8001/cameras/${cameraId}`, {
+      const response = await fetch(`${API_URL}/cameras/${cameraId}`, {
         method: "DELETE",
       })
 
@@ -151,8 +324,52 @@ export const CameraManager = () => {
     }
   }
 
+  const openEditDialog = (camera: Camera) => {
+    setEditingCamera(camera)
+    setEditName(camera.name)
+    setEditUrl(camera.rtsp_url)
+    setEditMode(camera.stream_mode || "auto")
+    setEditTenantId(camera.tenant_id?.toString() || "")
+    setEditLocationId(camera.location_id?.toString() || "")
+    setConnectionResult(null)
+  }
+
+  const handleUpdateCamera = async () => {
+    if (!editingCamera) return
+    
+    setSaving(true)
+    try {
+      const response = await fetch(`${API_URL}/cameras/${editingCamera.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName,
+          rtsp_url: editUrl,
+          stream_mode: editMode,
+          tenant_id: editTenantId ? parseInt(editTenantId) : null,
+          location_id: editLocationId ? parseInt(editLocationId) : null,
+        }),
+      })
+
+      if (response.ok) {
+        fetchCameras()
+        setEditingCamera(null)
+        setConnectionResult(null)
+      } else {
+        const error = await response.json()
+        alert(error.detail || "Error al actualizar la cámara")
+      }
+    } catch (error) {
+      console.error("Failed to update camera", error)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   useEffect(() => {
     fetchCameras()
+    fetchTenants()
+    fetchLocations()
   }, [])
 
   return (
@@ -165,16 +382,16 @@ export const CameraManager = () => {
               <circle cx="12" cy="12" r="10"/>
               <path d="M12 6v6l4 2"/>
             </svg>
-            Discover Cameras
+            Descubrir Cámaras
           </CardTitle>
           <CardDescription>
-            Scan your local network to automatically find IP cameras
+            Escanea tu red local para encontrar cámaras IP automáticamente
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-4 items-end mb-4">
             <div className="grid gap-2 flex-1">
-              <Label htmlFor="network">Network Range (CIDR)</Label>
+              <Label htmlFor="network">Rango de Red (CIDR)</Label>
               <Input
                 id="network"
                 placeholder="192.168.1.0/24"
@@ -189,10 +406,10 @@ export const CameraManager = () => {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Scanning...
+                  Escaneando...
                 </>
               ) : (
-                "Scan Network"
+                "Escanear Red"
               )}
             </Button>
           </div>
@@ -202,12 +419,12 @@ export const CameraManager = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>IP Address</TableHead>
-                    <TableHead>Port</TableHead>
-                    <TableHead>Manufacturer</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>RTSP URL</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead>IP</TableHead>
+                    <TableHead>Puerto</TableHead>
+                    <TableHead>Fabricante</TableHead>
+                    <TableHead>Método</TableHead>
+                    <TableHead>URL RTSP</TableHead>
+                    <TableHead>Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -215,7 +432,7 @@ export const CameraManager = () => {
                     <TableRow key={camera.ip}>
                       <TableCell className="font-mono">{camera.ip}</TableCell>
                       <TableCell>{camera.port}</TableCell>
-                      <TableCell>{camera.manufacturer || "Unknown"}</TableCell>
+                      <TableCell>{camera.manufacturer || "Desconocido"}</TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                           camera.discovery_method === "onvif" 
@@ -242,10 +459,10 @@ export const CameraManager = () => {
                           disabled={addingCamera === camera.ip}
                           onClick={() => {
                             const select = document.getElementById(`url-${camera.ip}`) as HTMLSelectElement
-                            addDiscoveredCamera(camera, select.value)
+                            openAddDialog(camera, select.value)
                           }}
                         >
-                          {addingCamera === camera.ip ? "Adding..." : "Add"}
+                          Agregar
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -257,7 +474,7 @@ export const CameraManager = () => {
 
           {!discovering && discoveredCameras.length === 0 && (
             <p className="text-sm text-gray-500 text-center py-4">
-              Click "Scan Network" to discover cameras on your network
+              Haz clic en "Escanear Red" para descubrir cámaras en tu red
             </p>
           )}
         </CardContent>
@@ -266,58 +483,126 @@ export const CameraManager = () => {
       {/* Manual Add Section */}
       <Card>
         <CardHeader>
-          <CardTitle>Add Camera Manually</CardTitle>
+          <CardTitle>Agregar Cámara Manualmente</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleAddCamera} className="grid gap-4 md:grid-cols-3 items-end">
-            <div className="grid gap-2">
-              <Label htmlFor="name">Camera Name</Label>
-              <Input
-                id="name"
-                placeholder="e.g. Front Door"
-                value={newCameraName}
-                onChange={(e) => setNewCameraName(e.target.value)}
-                required
-              />
+          <form onSubmit={handleAddCamera} className="grid gap-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Nombre de Cámara</Label>
+                <Input
+                  id="name"
+                  placeholder="ej. Puerta Principal"
+                  value={newCameraName}
+                  onChange={(e) => setNewCameraName(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="url">URL RTSP</Label>
+                <Input
+                  id="url"
+                  placeholder="rtsp://..."
+                  value={newCameraUrl}
+                  onChange={(e) => setNewCameraUrl(e.target.value)}
+                  required
+                />
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="url">RTSP URL</Label>
-              <Input
-                id="url"
-                placeholder="rtsp://..."
-                value={newCameraUrl}
-                onChange={(e) => setNewCameraUrl(e.target.value)}
-                required
-              />
+            
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="tenant">Organización (Tenant)</Label>
+                <Select 
+                  value={selectedTenantId} 
+                  onValueChange={(val) => setSelectedTenantId(val)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar organización" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id.toString()}>
+                        {tenant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="location">Ubicación</Label>
+                <Select 
+                  value={selectedLocationId} 
+                  onValueChange={(val) => setSelectedLocationId(val)}
+                  disabled={!selectedTenantId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={selectedTenantId ? "Seleccionar ubicación" : "Primero seleccione organización"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredLocations.map((location) => (
+                      <SelectItem key={location.id} value={location.id.toString()}>
+                        {location.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Adding..." : "Add Camera"}
-            </Button>
+            
+            <div className="flex gap-2 items-center flex-wrap">
+              <Button 
+                type="button" 
+                variant="outline"
+                disabled={!newCameraUrl || testingConnection}
+                onClick={() => testRtspConnection(newCameraUrl)}
+              >
+                {testingConnection ? "Probando..." : "Probar Conexión"}
+              </Button>
+              
+              {connectionResult && (
+                <span className={`text-sm ${connectionResult.success ? "text-green-600" : "text-red-600"}`}>
+                  {connectionResult.success ? "✓ " : "✗ "}
+                  {connectionResult.message}
+                  {connectionResult.video_info && (
+                    <span className="ml-2 text-gray-500">
+                      ({connectionResult.video_info.codec} {connectionResult.video_info.width}x{connectionResult.video_info.height})
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+            
+            <div className="flex gap-2">
+              <Button type="submit" disabled={loading}>
+                {loading ? "Agregando..." : "Agregar Cámara"}
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Connected Cameras</CardTitle>
+          <CardTitle>Cámaras Conectadas</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>RTSP URL</TableHead>
-                <TableHead>Mode</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>Nombre</TableHead>
+                <TableHead>URL RTSP</TableHead>
+                <TableHead>Modo</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {cameras.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-gray-500">
-                    No cameras found.
+                    No se encontraron cámaras.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -341,17 +626,26 @@ export const CameraManager = () => {
                       <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                         camera.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
                       }`}>
-                        {camera.is_active ? "Active" : "Inactive"}
+                        {camera.is_active ? "Activa" : "Inactiva"}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDeleteCamera(camera.id)}
-                      >
-                        Delete
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditDialog(camera)}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDeleteCamera(camera.id)}
+                        >
+                          Eliminar
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -360,6 +654,226 @@ export const CameraManager = () => {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Edit Camera Dialog */}
+      <Dialog open={!!editingCamera} onOpenChange={(open) => !open && setEditingCamera(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Cámara</DialogTitle>
+            <DialogDescription>
+              Modifica la configuración de la cámara
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-name">Nombre</Label>
+              <Input
+                id="edit-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
+            </div>
+            
+            <div className="grid gap-2">
+              <Label htmlFor="edit-url">URL RTSP</Label>
+              <Input
+                id="edit-url"
+                value={editUrl}
+                onChange={(e) => setEditUrl(e.target.value)}
+              />
+            </div>
+            
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>Organización (Tenant)</Label>
+                <Select 
+                  value={editTenantId} 
+                  onValueChange={(val) => setEditTenantId(val)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar organización" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id.toString()}>
+                        {tenant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Ubicación</Label>
+                <Select 
+                  value={editLocationId} 
+                  onValueChange={(val) => setEditLocationId(val)}
+                  disabled={!editTenantId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={editTenantId ? "Seleccionar ubicación" : "Primero seleccione organización"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getEditFilteredLocations().map((location) => (
+                      <SelectItem key={location.id} value={location.id.toString()}>
+                        {location.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div className="grid gap-2">
+              <Label htmlFor="edit-mode">Modo de Stream</Label>
+              <select
+                id="edit-mode"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={editMode}
+                onChange={(e) => setEditMode(e.target.value)}
+              >
+                <option value="auto">Auto</option>
+                <option value="direct">Directo</option>
+                <option value="ffmpeg">FFmpeg</option>
+              </select>
+            </div>
+            
+            <div className="flex gap-2 items-center flex-wrap">
+              <Button 
+                type="button" 
+                variant="outline"
+                size="sm"
+                disabled={!editUrl || testingConnection}
+                onClick={() => testRtspConnection(editUrl)}
+              >
+                {testingConnection ? "Probando..." : "Probar Conexión"}
+              </Button>
+              
+              {connectionResult && (
+                <span className={`text-sm ${connectionResult.success ? "text-green-600" : "text-red-600"}`}>
+                  {connectionResult.success ? "✓ Conexión OK" : "✗ " + connectionResult.message}
+                </span>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingCamera(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleUpdateCamera} disabled={saving}>
+              {saving ? "Guardando..." : "Guardar Cambios"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Discovered Camera Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={(open) => !open && setAddDialogOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Agregar Cámara Descubierta</DialogTitle>
+            <DialogDescription>
+              Personaliza el nombre antes de agregar
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="custom-name">Nombre de Cámara</Label>
+              <Input
+                id="custom-name"
+                value={customCameraName}
+                onChange={(e) => setCustomCameraName(e.target.value)}
+                placeholder="Nombre personalizado"
+              />
+            </div>
+            
+            <div className="grid gap-2">
+              <Label>URL RTSP</Label>
+              <code className="text-xs bg-gray-100 dark:bg-gray-800 p-2 rounded break-all">
+                {selectedRtspUrl}
+              </code>
+            </div>
+            
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>Organización (Tenant)</Label>
+                <Select 
+                  value={dialogTenantId} 
+                  onValueChange={(val) => setDialogTenantId(val)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar organización" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id.toString()}>
+                        {tenant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Ubicación</Label>
+                <Select 
+                  value={dialogLocationId} 
+                  onValueChange={(val) => setDialogLocationId(val)}
+                  disabled={!dialogTenantId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={dialogTenantId ? "Seleccionar ubicación" : "Primero seleccione organización"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getDialogFilteredLocations().map((location) => (
+                      <SelectItem key={location.id} value={location.id.toString()}>
+                        {location.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            
+            <div className="flex gap-2 items-center flex-wrap">
+              <Button 
+                type="button" 
+                variant="outline"
+                size="sm"
+                disabled={testingConnection}
+                onClick={() => testRtspConnection(selectedRtspUrl)}
+              >
+                {testingConnection ? "Probando..." : "Probar Conexión"}
+              </Button>
+              
+              {connectionResult && (
+                <span className={`text-sm ${connectionResult.success ? "text-green-600" : "text-red-600"}`}>
+                  {connectionResult.success ? "✓ " : "✗ "}
+                  {connectionResult.message}
+                  {connectionResult.video_info && (
+                    <span className="ml-2 text-gray-500">
+                      ({connectionResult.video_info.codec} {connectionResult.video_info.width}x{connectionResult.video_info.height})
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleAddDiscoveredCamera} 
+              disabled={addingCamera !== null || !customCameraName}
+            >
+              {addingCamera ? "Agregando..." : "Agregar Cámara"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

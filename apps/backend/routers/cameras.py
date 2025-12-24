@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import and_
 from typing import List, Optional
 from pydantic import BaseModel
 
 from database import get_db
-from models import Camera
+from models import Camera, Location, Tenant
 from schemas import CameraCreate, CameraResponse, CameraUpdate
 from services.mediamtx import (
     add_camera_path,
@@ -24,6 +25,8 @@ from services.onvif_config import (
     get_camera_video_config,
     update_camera_video_config
 )
+import aiohttp
+import asyncio
 
 
 # Pydantic models for ONVIF configuration
@@ -50,21 +53,182 @@ class VideoEncoderUpdate(BaseModel):
     profile: Optional[str] = None
 
 
+class RTSPTestRequest(BaseModel):
+    """Request model for testing RTSP connection"""
+    rtsp_url: str
+    timeout: int = 5
+
+
 router = APIRouter(
     prefix="/cameras",
     tags=["cameras"],
     responses={404: {"description": "Not found"}},
 )
 
+
+def get_recording_path(tenant_id: int, location_id: int, camera_id: int) -> str:
+    """Generate the recording path for a camera based on tenant/location structure"""
+    return f"/recordings/tenant_{tenant_id}/location_{location_id}/camera_{camera_id}"
+
+
+@router.post("/test-rtsp")
+async def test_rtsp_connection(request: RTSPTestRequest):
+    """
+    Test if an RTSP URL is accessible and returns a valid stream.
+    Returns connection status and basic stream info.
+    """
+    rtsp_url = request.rtsp_url
+    timeout = request.timeout
+    
+    try:
+        # Try to connect using ffprobe to validate the stream
+        import subprocess
+        
+        # Use ffprobe to test the stream
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-rtsp_transport", "tcp",
+            "-i", rtsp_url,
+            "-show_entries", "stream=codec_name,width,height,r_frame_rate",
+            "-of", "json",
+            "-timeout", str(timeout * 1000000)  # Convert to microseconds
+        ]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout + 2
+            )
+            
+            if process.returncode == 0:
+                import json
+                info = json.loads(stdout.decode())
+                streams = info.get("streams", [])
+                
+                video_info = None
+                for stream in streams:
+                    if stream.get("codec_name") in ["h264", "h265", "hevc", "mjpeg"]:
+                        video_info = {
+                            "codec": stream.get("codec_name"),
+                            "width": stream.get("width"),
+                            "height": stream.get("height"),
+                            "framerate": stream.get("r_frame_rate")
+                        }
+                        break
+                
+                return {
+                    "success": True,
+                    "message": "Connection successful",
+                    "video_info": video_info
+                }
+            else:
+                error_msg = stderr.decode().strip() if stderr else "Unknown error"
+                return {
+                    "success": False,
+                    "message": f"Failed to connect: {error_msg[:200]}",
+                    "video_info": None
+                }
+                
+        except asyncio.TimeoutError:
+            process.kill()
+            return {
+                "success": False,
+                "message": "Connection timeout",
+                "video_info": None
+            }
+            
+    except FileNotFoundError:
+        # ffprobe not available, try simple socket test
+        try:
+            # Parse RTSP URL to get host and port
+            import re
+            match = re.match(r'rtsp://(?:[^:@]+(?::[^@]+)?@)?([^:/]+)(?::(\d+))?', rtsp_url)
+            if match:
+                host = match.group(1)
+                port = int(match.group(2) or 554)
+                
+                # Try TCP connection
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(host, port),
+                    timeout=timeout
+                )
+                writer.close()
+                await writer.wait_closed()
+                
+                return {
+                    "success": True,
+                    "message": "Port is open (ffprobe not available for full test)",
+                    "video_info": None
+                }
+        except Exception as e:
+            pass
+        
+        return {
+            "success": False,
+            "message": "Cannot test connection (ffprobe not available)",
+            "video_info": None
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error: {str(e)}",
+            "video_info": None
+        }
+
+
 @router.post("/", response_model=CameraResponse)
 async def create_camera(camera: CameraCreate, db: AsyncSession = Depends(get_db)):
+    # Validate tenant_id if provided
+    if camera.tenant_id is not None:
+        tenant_result = await db.execute(select(Tenant).filter(Tenant.id == camera.tenant_id))
+        tenant = tenant_result.scalars().first()
+        if tenant is None:
+            raise HTTPException(status_code=400, detail="Invalid tenant_id: Tenant not found")
+    
+    # Validate location_id if provided
+    if camera.location_id is not None:
+        location_result = await db.execute(select(Location).filter(Location.id == camera.location_id))
+        location = location_result.scalars().first()
+        if location is None:
+            raise HTTPException(status_code=400, detail="Invalid location_id: Location not found")
+        
+        # Ensure location belongs to the specified tenant
+        if camera.tenant_id is not None and location.tenant_id != camera.tenant_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Location does not belong to the specified tenant"
+            )
+    
+    # Check for unique constraint: same name in same tenant/location
+    if camera.tenant_id is not None and camera.location_id is not None:
+        existing_query = select(Camera).filter(
+            Camera.tenant_id == camera.tenant_id,
+            Camera.location_id == camera.location_id,
+            Camera.name == camera.name
+        )
+        existing_result = await db.execute(existing_query)
+        if existing_result.scalars().first() is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="A camera with this name already exists in this location"
+            )
+    
     # Create camera in database
     db_camera = Camera(
         name=camera.name, 
         rtsp_url=camera.rtsp_url, 
         is_active=camera.is_active,
         stream_mode=camera.stream_mode,
-        user_id=camera.user_id
+        user_id=camera.user_id,
+        tenant_id=camera.tenant_id,
+        location_id=camera.location_id
     )
     db.add(db_camera)
     await db.commit()
@@ -91,11 +255,17 @@ async def read_cameras(
     skip: int = 0, 
     limit: int = 100, 
     user_id: Optional[str] = Query(None, description="Filter cameras by user ID"),
+    tenant_id: Optional[int] = Query(None, description="Filter cameras by tenant ID"),
+    location_id: Optional[int] = Query(None, description="Filter cameras by location ID"),
     db: AsyncSession = Depends(get_db)
 ):
     query = select(Camera)
     if user_id:
         query = query.filter(Camera.user_id == user_id)
+    if tenant_id:
+        query = query.filter(Camera.tenant_id == tenant_id)
+    if location_id:
+        query = query.filter(Camera.location_id == location_id)
     query = query.offset(skip).limit(limit)
     result = await db.execute(query)
     cameras = result.scalars().all()
@@ -118,6 +288,47 @@ async def update_camera(camera_id: int, camera: CameraUpdate, db: AsyncSession =
     
     old_path_name = sanitize_path_name(db_camera.name)
     
+    # Validate tenant_id if provided
+    new_tenant_id = camera.tenant_id if camera.tenant_id is not None else db_camera.tenant_id
+    new_location_id = camera.location_id if camera.location_id is not None else db_camera.location_id
+    
+    if camera.tenant_id is not None:
+        tenant_result = await db.execute(select(Tenant).filter(Tenant.id == camera.tenant_id))
+        tenant = tenant_result.scalars().first()
+        if tenant is None:
+            raise HTTPException(status_code=400, detail="Invalid tenant_id: Tenant not found")
+    
+    # Validate location_id if provided
+    if camera.location_id is not None:
+        location_result = await db.execute(select(Location).filter(Location.id == camera.location_id))
+        location = location_result.scalars().first()
+        if location is None:
+            raise HTTPException(status_code=400, detail="Invalid location_id: Location not found")
+        
+        # Ensure location belongs to the specified tenant
+        if new_tenant_id is not None and location.tenant_id != new_tenant_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Location does not belong to the specified tenant"
+            )
+    
+    # Check unique constraint if name is being changed
+    new_name = camera.name if camera.name is not None else db_camera.name
+    if new_tenant_id is not None and new_location_id is not None:
+        if camera.name is not None or camera.tenant_id is not None or camera.location_id is not None:
+            existing_query = select(Camera).filter(
+                Camera.tenant_id == new_tenant_id,
+                Camera.location_id == new_location_id,
+                Camera.name == new_name,
+                Camera.id != camera_id  # Exclude current camera
+            )
+            existing_result = await db.execute(existing_query)
+            if existing_result.scalars().first() is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A camera with this name already exists in this location"
+                )
+    
     # Update fields if provided
     if camera.name is not None:
         db_camera.name = camera.name
@@ -127,6 +338,10 @@ async def update_camera(camera_id: int, camera: CameraUpdate, db: AsyncSession =
         db_camera.is_active = camera.is_active
     if camera.stream_mode is not None:
         db_camera.stream_mode = camera.stream_mode
+    if camera.tenant_id is not None:
+        db_camera.tenant_id = camera.tenant_id
+    if camera.location_id is not None:
+        db_camera.location_id = camera.location_id
     
     new_path_name = sanitize_path_name(db_camera.name)
     mode = db_camera.stream_mode

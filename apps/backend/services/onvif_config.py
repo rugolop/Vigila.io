@@ -525,18 +525,20 @@ class ONVIFClient:
         quality: float = None,
         gov_length: int = None,
         profile: str = None
-    ) -> bool:
+    ) -> tuple[bool, str]:
         """
         Update video encoder configuration.
         Only provided parameters will be updated.
+        Returns (success, error_message)
         """
         await self._ensure_media_url()
         
         # First get current configuration
         current = await self.get_video_encoder_configuration(token)
         if not current:
-            print(f"Could not get current configuration for token {token}")
-            return False
+            error_msg = f"Could not get current configuration for token {token}"
+            print(error_msg)
+            return False, error_msg
         
         # Use current values for unspecified parameters
         new_encoding = encoding or current.encoding
@@ -586,18 +588,32 @@ class ONVIFClient:
         </trt:SetVideoEncoderConfiguration>
         '''
         
+        print(f"ONVIF SetVideoEncoderConfiguration request for token {token}")
+        print(f"  Resolution: {new_width}x{new_height}, Encoding: {new_encoding}")
+        print(f"  Framerate: {new_framerate}, Bitrate: {new_bitrate}, Quality: {new_quality}")
+        
         response = await self._send_request(self.media_service_url, body)
         
         if response is not None:
             # Check for fault
             for elem in response.iter():
                 if 'Fault' in elem.tag:
-                    print(f"ONVIF SetVideoEncoderConfiguration fault")
-                    return False
+                    # Try to extract fault message
+                    fault_msg = "Unknown ONVIF fault"
+                    for child in elem.iter():
+                        if 'Reason' in child.tag or 'Text' in child.tag:
+                            if child.text:
+                                fault_msg = child.text.strip()
+                                break
+                        if 'Detail' in child.tag or 'detail' in child.tag.lower():
+                            if child.text:
+                                fault_msg = child.text.strip()
+                    print(f"ONVIF SetVideoEncoderConfiguration fault: {fault_msg}")
+                    return False, f"Camera rejected the configuration: {fault_msg}"
             print(f"Successfully updated video encoder configuration {token}")
-            return True
+            return True, ""
         
-        return False
+        return False, "No response from camera"
 
 
 async def get_camera_video_config(
@@ -710,7 +726,7 @@ async def update_camera_video_config(
     }
     
     try:
-        success = await client.set_video_encoder_configuration(
+        success, error_msg = await client.set_video_encoder_configuration(
             token=config_token,
             encoding=encoding,
             width=width,
@@ -740,7 +756,7 @@ async def update_camera_video_config(
                     "profile": updated.profile
                 }
         else:
-            result["error"] = "Failed to update configuration"
+            result["error"] = error_msg or "Failed to update configuration"
     
     except Exception as e:
         result["error"] = str(e)
