@@ -25,30 +25,5 @@ hlsSegmentDuration: 1s
 hlsPartDuration: 200ms
 
 paths:
-  # Living Room camera - direct RTSP connection
-  living_room:
-    source: rtsp://admin:4gCl5o61l2S@192.168.1.14:554/live1.sdp
-    sourceOnDemand: no
-    record: yes
-    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S
-    recordFormat: fmp4
-    recordSegmentDuration: 30m
-    recordDeleteAfter: 7d
-
-  # Front Door camera - uses FFmpeg proxy to avoid back channel issues
-  front_door:
-    runOnDemand: ffmpeg -rtsp_transport tcp -i rtsp://admin:Agc150611@192.168.1.12:554/ch01.264 -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH
-    runOnDemandRestart: yes
-    record: yes
-    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S
-    recordFormat: fmp4
-    recordSegmentDuration: 30m
-    recordDeleteAfter: 7d
-
-  # Default configuration for all other paths (dynamically added ones)
-  all_others:
-    record: yes
-    recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S
-    recordFormat: fmp4
-    recordSegmentDuration: 30m
-    recordDeleteAfter: 7d
+  # Las cámaras se añaden dinámicamente desde la interfaz web
+  # con grabación habilitada automáticamente por el backend

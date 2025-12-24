@@ -186,6 +186,7 @@ async def test_rtsp_connection(request: RTSPTestRequest):
 @router.post("/", response_model=CameraResponse)
 async def create_camera(camera: CameraCreate, db: AsyncSession = Depends(get_db)):
     # Validate tenant_id if provided
+    tenant = None
     if camera.tenant_id is not None:
         tenant_result = await db.execute(select(Tenant).filter(Tenant.id == camera.tenant_id))
         tenant = tenant_result.scalars().first()
@@ -193,6 +194,7 @@ async def create_camera(camera: CameraCreate, db: AsyncSession = Depends(get_db)
             raise HTTPException(status_code=400, detail="Invalid tenant_id: Tenant not found")
     
     # Validate location_id if provided
+    location = None
     if camera.location_id is not None:
         location_result = await db.execute(select(Location).filter(Location.id == camera.location_id))
         location = location_result.scalars().first()
@@ -235,8 +237,18 @@ async def create_camera(camera: CameraCreate, db: AsyncSession = Depends(get_db)
     await db.refresh(db_camera)
     
     # Add camera path to MediaMTX with intelligent mode detection
+    # Pass tenant_slug and location_name for recording path organization
     path_name = sanitize_path_name(camera.name)
-    success, final_mode = await add_camera_path(path_name, camera.rtsp_url, camera.stream_mode)
+    tenant_slug = tenant.slug if tenant else None
+    location_name = location.name if location else None
+    
+    success, final_mode = await add_camera_path(
+        path_name, 
+        camera.rtsp_url, 
+        camera.stream_mode,
+        tenant_slug=tenant_slug,
+        location_name=location_name
+    )
     
     # Update the stream_mode in database if auto-detection changed it
     if camera.stream_mode == "auto" and final_mode in ["direct", "ffmpeg"]:
@@ -403,22 +415,37 @@ async def sync_cameras_to_mediamtx(db: AsyncSession = Depends(get_db)):
     Synchronize all cameras from database to MediaMTX.
     Uses intelligent mode detection for cameras set to 'auto'.
     """
-    result = await db.execute(select(Camera).filter(Camera.is_active == True))
-    cameras = result.scalars().all()
+    # Get all active cameras with their tenant and location info
+    result = await db.execute(
+        select(Camera, Tenant, Location)
+        .outerjoin(Tenant, Camera.tenant_id == Tenant.id)
+        .outerjoin(Location, Camera.location_id == Location.id)
+        .filter(Camera.is_active == True)
+    )
+    rows = result.all()
     
     synced = []
     failed = []
     
-    for camera in cameras:
+    for camera, tenant, location in rows:
         path_name = sanitize_path_name(camera.name)
         mode = camera.stream_mode or "auto"
+        tenant_slug = tenant.slug if tenant else None
+        location_name = location.name if location else None
         
-        success, final_mode = await add_camera_path(path_name, camera.rtsp_url, mode)
+        success, final_mode = await add_camera_path(
+            path_name, 
+            camera.rtsp_url, 
+            mode,
+            tenant_slug=tenant_slug,
+            location_name=location_name
+        )
         
         if success:
             synced.append({
                 "name": camera.name,
-                "mode": final_mode
+                "mode": final_mode,
+                "record_path": f"/recordings/{tenant_slug or 'default'}/{location_name or 'default'}/{path_name}" if tenant_slug else f"/recordings/{path_name}"
             })
             # Update mode in database if auto-detection changed it
             if mode == "auto" and final_mode in ["direct", "ffmpeg"]:
@@ -444,19 +471,34 @@ async def resync_camera(camera_id: int, force_mode: str = None, db: AsyncSession
         camera_id: ID of the camera to sync
         force_mode: Optional mode to force ('direct', 'ffmpeg', or 'auto')
     """
-    result = await db.execute(select(Camera).filter(Camera.id == camera_id))
-    camera = result.scalars().first()
-    if camera is None:
+    # Get camera with tenant and location info
+    result = await db.execute(
+        select(Camera, Tenant, Location)
+        .outerjoin(Tenant, Camera.tenant_id == Tenant.id)
+        .outerjoin(Location, Camera.location_id == Location.id)
+        .filter(Camera.id == camera_id)
+    )
+    row = result.first()
+    if row is None:
         raise HTTPException(status_code=404, detail="Camera not found")
     
+    camera, tenant, location = row
     path_name = sanitize_path_name(camera.name)
     mode = force_mode if force_mode in ["direct", "ffmpeg", "auto"] else camera.stream_mode
+    tenant_slug = tenant.slug if tenant else None
+    location_name = location.name if location else None
     
     # Remove existing path first
     await remove_camera_path(path_name)
     
-    # Re-add with specified mode
-    success, final_mode = await add_camera_path(path_name, camera.rtsp_url, mode)
+    # Re-add with specified mode and recording path
+    success, final_mode = await add_camera_path(
+        path_name, 
+        camera.rtsp_url, 
+        mode,
+        tenant_slug=tenant_slug,
+        location_name=location_name
+    )
     
     if success and final_mode in ["direct", "ffmpeg"]:
         camera.stream_mode = final_mode
