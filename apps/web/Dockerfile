@@ -21,10 +21,8 @@ RUN npm ci --legacy-peer-deps
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copiar dependencias del stage anterior
+# Copiar node_modules del stage anterior
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules 2>/dev/null || true
-COPY --from=deps /app/packages/ui/node_modules ./packages/ui/node_modules 2>/dev/null || true
 
 # Copiar código fuente
 COPY . .
