@@ -105,9 +105,15 @@ async def _add_ffmpeg_path(
     
     Uses runOnInit instead of runOnDemand so the stream runs continuously
     and can record even when no one is watching.
+    
+    Audio is re-encoded to AAC with async resampling to fix timestamp
+    synchronization issues common with G711/PCM audio from IP cameras.
     """
-    # FFmpeg command that avoids back channel negotiation
-    ffmpeg_cmd = f'ffmpeg -rtsp_transport tcp -i {rtsp_url} -c copy -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH'
+    # FFmpeg command with audio re-encoding to fix timestamp drift
+    # -c:v copy = copy video without re-encoding
+    # -c:a aac = re-encode audio to AAC (fixes G711 timestamp issues)
+    # -af aresample=async=1 = resample audio to sync with video timestamps
+    ffmpeg_cmd = f'ffmpeg -rtsp_transport tcp -i {rtsp_url} -c:v copy -c:a aac -af aresample=async=1 -f rtsp rtsp://localhost:$RTSP_PORT/$MTX_PATH'
     
     config = {
         # Use runOnInit for continuous streaming (required for recording)
@@ -435,3 +441,46 @@ async def get_recording_status(path_name: str) -> Optional[bool]:
     except Exception as e:
         print(f"Error getting recording status for {path_name}: {e}")
         return None
+
+
+async def restore_camera_path(
+    camera_name: str,
+    rtsp_url: str,
+    stream_mode: str,
+    tenant_slug: Optional[str] = None,
+    location_name: Optional[str] = None,
+    is_recording: bool = True
+) -> bool:
+    """
+    Restore a camera path to MediaMTX (used at startup to reconnect cameras).
+    
+    Args:
+        camera_name: Camera name for path generation
+        rtsp_url: RTSP URL of the camera
+        stream_mode: Connection mode ('direct' or 'ffmpeg')
+        tenant_slug: Optional tenant slug for recording path
+        location_name: Optional location name for recording path
+        is_recording: Whether recording should be enabled
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    path_name = sanitize_path_name(camera_name)
+    mode = stream_mode if stream_mode in ["direct", "ffmpeg"] else "auto"
+    
+    print(f"Restoring camera path: {path_name} (mode={mode}, recording={is_recording})")
+    
+    success, final_mode = await add_camera_path(
+        path_name=path_name,
+        rtsp_url=rtsp_url,
+        mode=mode,
+        tenant_slug=tenant_slug,
+        location_name=location_name
+    )
+    
+    if success:
+        print(f"Successfully restored camera: {camera_name} -> {path_name} (mode={final_mode})")
+    else:
+        print(f"Failed to restore camera: {camera_name}")
+    
+    return success

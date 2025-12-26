@@ -4,6 +4,52 @@ from contextlib import asynccontextmanager
 from database import engine, Base, AsyncSessionLocal
 from routers import cameras, recordings, storage, tenants, locations, users, agents
 from services.storage_manager import start_storage_manager, stop_storage_manager
+from services.mediamtx import restore_camera_path, sanitize_path_name
+from sqlalchemy.future import select
+from models import Camera, Tenant, Location
+import asyncio
+
+
+async def restore_all_cameras():
+    """Restore all active camera paths to MediaMTX on startup."""
+    print("Restoring camera streams to MediaMTX...")
+    
+    async with AsyncSessionLocal() as db:
+        # Get all active cameras with their tenant and location info
+        result = await db.execute(
+            select(Camera, Tenant, Location)
+            .outerjoin(Tenant, Camera.tenant_id == Tenant.id)
+            .outerjoin(Location, Camera.location_id == Location.id)
+            .where(Camera.is_active == True)
+        )
+        cameras_data = result.all()
+        
+        restored = 0
+        failed = 0
+        
+        for camera, tenant, location in cameras_data:
+            tenant_slug = tenant.slug if tenant else None
+            location_name = location.name if location else None
+            
+            success = await restore_camera_path(
+                camera_name=camera.name,
+                rtsp_url=camera.rtsp_url,
+                stream_mode=camera.stream_mode or "auto",
+                tenant_slug=tenant_slug,
+                location_name=location_name,
+                is_recording=camera.is_recording
+            )
+            
+            if success:
+                restored += 1
+            else:
+                failed += 1
+            
+            # Small delay between cameras to avoid overwhelming MediaMTX
+            await asyncio.sleep(1)
+        
+        print(f"Camera restoration complete: {restored} restored, {failed} failed")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -14,6 +60,9 @@ async def lifespan(app: FastAPI):
     # Initialize default storage volume
     async with AsyncSessionLocal() as db:
         await storage.initialize_default_storage(db)
+    
+    # Restore camera streams to MediaMTX
+    await restore_all_cameras()
     
     # Start storage cleanup manager
     await start_storage_manager()

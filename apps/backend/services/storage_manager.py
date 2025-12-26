@@ -19,7 +19,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
-from database import get_db, async_session_maker
+from database import get_db, AsyncSessionLocal
 from models import StorageVolume, StorageStatus, Camera, Tenant, Location
 
 logger = logging.getLogger(__name__)
@@ -521,7 +521,7 @@ class StorageCleanupManager:
     
     async def _run_cleanup(self):
         """Run a single cleanup cycle."""
-        async with async_session_maker() as db:
+        async with AsyncSessionLocal() as db:
             # Get all storage volumes
             result = await db.execute(
                 select(StorageVolume).filter(StorageVolume.is_active == True)
