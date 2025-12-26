@@ -14,7 +14,9 @@ from services.mediamtx import (
     remove_camera_path,
     sanitize_path_name,
     list_active_paths,
-    get_path_status
+    get_path_status,
+    set_recording_enabled,
+    get_recording_status
 )
 from services.network_scanner import (
     discover_cameras,
@@ -387,6 +389,122 @@ async def delete_camera(camera_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(db_camera)
     await db.commit()
     return {"message": "Camera deleted successfully"}
+
+
+@router.post("/{camera_id}/recording/toggle", response_model=CameraResponse)
+async def toggle_camera_recording(camera_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Toggle recording on/off for a camera.
+    
+    This pauses or resumes recording without stopping the stream.
+    The camera will still be visible in live view, but won't save to disk.
+    """
+    result = await db.execute(select(Camera).filter(Camera.id == camera_id))
+    db_camera = result.scalars().first()
+    if db_camera is None:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    
+    # Toggle recording state
+    new_state = not db_camera.is_recording
+    path_name = sanitize_path_name(db_camera.name)
+    
+    # Update MediaMTX
+    success = await set_recording_enabled(path_name, new_state)
+    if not success:
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to update recording state in MediaMTX"
+        )
+    
+    # Update database
+    db_camera.is_recording = new_state
+    await db.commit()
+    await db.refresh(db_camera)
+    
+    return db_camera
+
+
+@router.post("/{camera_id}/recording/start", response_model=CameraResponse)
+async def start_camera_recording(camera_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Start recording for a camera.
+    """
+    result = await db.execute(select(Camera).filter(Camera.id == camera_id))
+    db_camera = result.scalars().first()
+    if db_camera is None:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    
+    if db_camera.is_recording:
+        return db_camera  # Already recording
+    
+    path_name = sanitize_path_name(db_camera.name)
+    success = await set_recording_enabled(path_name, True)
+    if not success:
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to start recording in MediaMTX"
+        )
+    
+    db_camera.is_recording = True
+    await db.commit()
+    await db.refresh(db_camera)
+    
+    return db_camera
+
+
+@router.post("/{camera_id}/recording/stop", response_model=CameraResponse)
+async def stop_camera_recording(camera_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Stop recording for a camera.
+    
+    The camera stream will continue to be available for live view,
+    but no new recordings will be saved to disk.
+    """
+    result = await db.execute(select(Camera).filter(Camera.id == camera_id))
+    db_camera = result.scalars().first()
+    if db_camera is None:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    
+    if not db_camera.is_recording:
+        return db_camera  # Already stopped
+    
+    path_name = sanitize_path_name(db_camera.name)
+    success = await set_recording_enabled(path_name, False)
+    if not success:
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to stop recording in MediaMTX"
+        )
+    
+    db_camera.is_recording = False
+    await db.commit()
+    await db.refresh(db_camera)
+    
+    return db_camera
+
+
+@router.get("/{camera_id}/recording/status")
+async def get_camera_recording_status(camera_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Get the recording status of a camera.
+    
+    Returns both the database state and the actual MediaMTX state.
+    """
+    result = await db.execute(select(Camera).filter(Camera.id == camera_id))
+    db_camera = result.scalars().first()
+    if db_camera is None:
+        raise HTTPException(status_code=404, detail="Camera not found")
+    
+    path_name = sanitize_path_name(db_camera.name)
+    mediamtx_status = await get_recording_status(path_name)
+    
+    return {
+        "camera_id": camera_id,
+        "camera_name": db_camera.name,
+        "db_recording": db_camera.is_recording,
+        "mediamtx_recording": mediamtx_status,
+        "in_sync": db_camera.is_recording == mediamtx_status if mediamtx_status is not None else None
+    }
 
 @router.get("/{camera_id}/stream")
 async def get_camera_stream(camera_id: int, db: AsyncSession = Depends(get_db)):

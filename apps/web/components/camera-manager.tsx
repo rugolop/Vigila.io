@@ -28,12 +28,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Video, VideoOff, Loader2 } from "lucide-react"
 
 interface Camera {
   id: number
   name: string
   rtsp_url: string
   is_active: boolean
+  is_recording?: boolean
   stream_mode?: string
   tenant_id?: number
   location_id?: number
@@ -116,6 +118,9 @@ export const CameraManager = () => {
   // Connection test state
   const [testingConnection, setTestingConnection] = useState(false)
   const [connectionResult, setConnectionResult] = useState<ConnectionTestResult | null>(null)
+  
+  // Recording toggle state
+  const [togglingRecording, setTogglingRecording] = useState<number | null>(null)
 
   // Fetch tenants
   const fetchTenants = async () => {
@@ -321,6 +326,32 @@ export const CameraManager = () => {
       }
     } catch (error) {
       console.error("Failed to delete camera", error)
+    }
+  }
+  
+  const handleToggleRecording = async (camera: Camera) => {
+    setTogglingRecording(camera.id)
+    try {
+      const response = await fetch(`${API_URL}/cameras/${camera.id}/recording/toggle`, {
+        method: "POST",
+      })
+      
+      if (response.ok) {
+        // Update local state immediately for better UX
+        setCameras(prev => prev.map(c => 
+          c.id === camera.id 
+            ? { ...c, is_recording: !c.is_recording } 
+            : c
+        ))
+      } else {
+        const error = await response.json()
+        alert(error.detail || "Error al cambiar estado de grabación")
+      }
+    } catch (error) {
+      console.error("Failed to toggle recording", error)
+      alert("Error de conexión")
+    } finally {
+      setTogglingRecording(null)
     }
   }
 
@@ -595,13 +626,14 @@ export const CameraManager = () => {
                 <TableHead>URL RTSP</TableHead>
                 <TableHead>Modo</TableHead>
                 <TableHead>Estado</TableHead>
+                <TableHead>Grabando</TableHead>
                 <TableHead>Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {cameras.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-gray-500">
+                  <TableCell colSpan={7} className="text-center text-gray-500">
                     No se encontraron cámaras.
                   </TableCell>
                 </TableRow>
@@ -630,7 +662,36 @@ export const CameraManager = () => {
                       </span>
                     </TableCell>
                     <TableCell>
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                        camera.is_recording !== false ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-500"
+                      }`}>
+                        {camera.is_recording !== false ? (
+                          <>
+                            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                            REC
+                          </>
+                        ) : (
+                          "Pausado"
+                        )}
+                      </span>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex gap-2">
+                        <Button
+                          variant={camera.is_recording !== false ? "outline" : "secondary"}
+                          size="sm"
+                          onClick={() => handleToggleRecording(camera)}
+                          disabled={togglingRecording === camera.id}
+                          title={camera.is_recording !== false ? "Detener grabación" : "Reanudar grabación"}
+                        >
+                          {togglingRecording === camera.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : camera.is_recording !== false ? (
+                            <Video className="h-4 w-4 text-red-500" />
+                          ) : (
+                            <VideoOff className="h-4 w-4 text-gray-400" />
+                          )}
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"

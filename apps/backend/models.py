@@ -170,6 +170,7 @@ class Camera(Base):
     name = Column(String, index=True)
     rtsp_url = Column(String, index=True)  # Removed unique constraint for multi-tenant
     is_active = Column(Boolean, default=True)
+    is_recording = Column(Boolean, default=True)  # Whether recording is enabled for this camera
     stream_mode = Column(String, default=StreamMode.AUTO.value)
     
     # Multi-tenant relations

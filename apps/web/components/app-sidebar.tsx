@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Video, FolderOpen, Settings, LayoutDashboard } from "lucide-react"
+import { Video, FolderOpen, Settings, LayoutDashboard, Server } from "lucide-react"
 
 import {
   Sidebar,
@@ -38,6 +38,16 @@ const navigation = [
         title: "Recordings",
         url: "/recordings",
         icon: FolderOpen,
+      },
+    ],
+  },
+  {
+    title: "Administración",
+    items: [
+      {
+        title: "Agentes Locales",
+        url: "/agents",
+        icon: Server,
       },
       {
         title: "Settings",

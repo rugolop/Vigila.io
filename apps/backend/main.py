@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import engine, Base, AsyncSessionLocal
-from routers import cameras, recordings, storage, tenants, locations, users
+from routers import cameras, recordings, storage, tenants, locations, users, agents
+from services.storage_manager import start_storage_manager, stop_storage_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -14,7 +15,13 @@ async def lifespan(app: FastAPI):
     async with AsyncSessionLocal() as db:
         await storage.initialize_default_storage(db)
     
+    # Start storage cleanup manager
+    await start_storage_manager()
+    
     yield
+    
+    # Stop storage cleanup manager on shutdown
+    await stop_storage_manager()
 
 from fastapi.staticfiles import StaticFiles
 import os
@@ -42,6 +49,7 @@ app.include_router(storage.router)
 app.include_router(tenants.router)
 app.include_router(locations.router)
 app.include_router(users.router)
+app.include_router(agents.router, prefix="/api")
 
 @app.get("/")
 async def root():

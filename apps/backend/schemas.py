@@ -26,6 +26,7 @@ class CameraResponse(CameraBase):
     user_id: Optional[str] = None
     tenant_id: Optional[int] = None
     location_id: Optional[int] = None
+    is_recording: bool = True
     created_at: datetime
 
     class Config:

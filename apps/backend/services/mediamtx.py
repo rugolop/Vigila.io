@@ -380,3 +380,58 @@ async def get_path_status(path_name: str) -> Optional[dict]:
     except Exception as e:
         print(f"Error getting path status from MediaMTX: {e}")
         return None
+
+
+async def set_recording_enabled(path_name: str, enabled: bool) -> bool:
+    """
+    Enable or disable recording for a camera path.
+    
+    This uses MediaMTX PATCH API to update only the record field
+    without changing other configuration.
+    
+    Args:
+        path_name: The name of the stream path
+        enabled: True to enable recording, False to disable
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            # Use PATCH to update only the record field
+            response = await client.patch(
+                f"{MEDIAMTX_API_URL}/v3/config/paths/patch/{path_name}",
+                json={"record": enabled},
+                timeout=10.0
+            )
+            
+            if response.status_code == 200:
+                print(f"Recording {'enabled' if enabled else 'disabled'} for path: {path_name}")
+                return True
+            else:
+                print(f"Failed to update recording for {path_name}: {response.status_code} - {response.text}")
+                return False
+            
+    except Exception as e:
+        print(f"Error updating recording for {path_name}: {e}")
+        return False
+
+
+async def get_recording_status(path_name: str) -> Optional[bool]:
+    """
+    Get the current recording status for a camera path.
+    
+    Args:
+        path_name: The name of the stream path
+    
+    Returns:
+        True if recording is enabled, False if disabled, None if path not found
+    """
+    try:
+        config = await get_camera_path(path_name)
+        if config:
+            return config.get("record", False)
+        return None
+    except Exception as e:
+        print(f"Error getting recording status for {path_name}: {e}")
+        return None

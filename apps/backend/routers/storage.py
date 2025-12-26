@@ -15,6 +15,7 @@ from glob import glob
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
+from pydantic import BaseModel
 
 from database import get_db
 from models import StorageVolume, StorageType, StorageStatus
@@ -24,6 +25,13 @@ from schemas import (
     StorageVolumeResponse,
     StorageStats,
     StorageOverview,
+)
+from services.storage_manager import (
+    analyze_storage_and_retention,
+    update_retention_settings,
+    cleanup_manager,
+    delete_old_recordings,
+    get_disk_usage,
 )
 
 
@@ -476,3 +484,159 @@ async def initialize_default_storage(db: AsyncSession):
         db.add(default_volume)
         await db.commit()
         print("Created default local storage volume")
+
+
+# =============================================================================
+# Retention & Cleanup Endpoints
+# =============================================================================
+
+class RetentionSettingsRequest(BaseModel):
+    """Request to update retention settings."""
+    retention_days: int
+    auto_adjust: bool = True
+
+
+class RetentionAnalysisResponse(BaseModel):
+    """Response with storage and retention analysis."""
+    volume_id: int
+    volume_name: str
+    mount_path: str
+    current_retention_days: int
+    recommended_retention_days: int
+    storage: dict
+    recordings: dict
+    cameras: dict
+    warnings: list
+    can_increase_retention: bool
+
+
+@router.get("/{volume_id}/retention/analysis")
+async def get_retention_analysis(
+    volume_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Analyze storage and get retention recommendations.
+    
+    Returns:
+    - Current and recommended retention days
+    - Storage usage breakdown
+    - Warnings if space is low
+    - Whether retention can be increased
+    """
+    analysis = await analyze_storage_and_retention(db, volume_id)
+    
+    if "error" in analysis:
+        raise HTTPException(status_code=400, detail=analysis["error"])
+    
+    return analysis
+
+
+@router.get("/retention/analysis")
+async def get_primary_retention_analysis(db: AsyncSession = Depends(get_db)):
+    """
+    Analyze storage and get retention recommendations for primary volume.
+    """
+    analysis = await analyze_storage_and_retention(db)
+    
+    if "error" in analysis:
+        raise HTTPException(status_code=400, detail=analysis["error"])
+    
+    return analysis
+
+
+@router.put("/{volume_id}/retention")
+async def set_retention_settings(
+    volume_id: int,
+    request: RetentionSettingsRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update retention settings for a storage volume.
+    
+    - If requested retention is too high for available space and auto_adjust=true,
+      it will be automatically reduced to the maximum possible.
+    - If auto_adjust=false and space is insufficient, an error is returned.
+    - Old recordings beyond the new retention period are deleted immediately.
+    """
+    if request.retention_days < 1:
+        raise HTTPException(status_code=400, detail="Retention days must be at least 1")
+    
+    if request.retention_days > 365:
+        raise HTTPException(status_code=400, detail="Retention days cannot exceed 365")
+    
+    result = await update_retention_settings(
+        db,
+        volume_id,
+        request.retention_days,
+        request.auto_adjust
+    )
+    
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    
+    return result
+
+
+@router.post("/{volume_id}/cleanup")
+async def trigger_cleanup(
+    volume_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually trigger cleanup for a storage volume.
+    
+    This will:
+    1. Delete recordings older than retention period
+    2. Delete oldest recordings if disk is nearly full
+    """
+    result = await db.execute(
+        select(StorageVolume).filter(StorageVolume.id == volume_id)
+    )
+    volume = result.scalars().first()
+    
+    if not volume:
+        raise HTTPException(status_code=404, detail="Storage volume not found")
+    
+    if not volume.mount_path or not os.path.exists(volume.mount_path):
+        raise HTTPException(status_code=400, detail="Volume mount path not accessible")
+    
+    # Run cleanup
+    deleted, freed = delete_old_recordings(
+        volume.mount_path,
+        volume.retention_days or 7
+    )
+    
+    # Update volume stats
+    total, used, free = get_disk_usage(volume.mount_path)
+    volume.total_bytes = total
+    volume.used_bytes = used
+    volume.last_checked = datetime.utcnow()
+    await db.commit()
+    
+    return {
+        "success": True,
+        "files_deleted": deleted,
+        "bytes_freed": freed,
+        "bytes_freed_gb": round(freed / (1024**3), 2),
+        "current_free_bytes": free,
+        "current_free_percent": round((free / total) * 100, 2) if total > 0 else 0
+    }
+
+
+@router.get("/cleanup/status")
+async def get_cleanup_status():
+    """
+    Get status of the background cleanup manager.
+    """
+    return cleanup_manager.get_status()
+
+
+@router.post("/cleanup/force")
+async def force_cleanup():
+    """
+    Force an immediate cleanup cycle across all volumes.
+    """
+    result = await cleanup_manager.force_cleanup()
+    return result
+

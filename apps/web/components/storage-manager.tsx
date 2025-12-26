@@ -46,7 +46,11 @@ import {
   CheckCircle2,
   FolderOpen,
   Settings,
+  Clock,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react"
+import { Slider } from "@/components/ui/slider"
 
 interface StorageVolume {
   id: number
@@ -83,6 +87,40 @@ interface StorageTypeInfo {
   fields: string[]
   hint?: string
   icon: string
+}
+
+interface RetentionAnalysis {
+  volume_id: number
+  volume_name: string
+  mount_path: string
+  current_retention_days: number
+  recommended_retention_days: number
+  storage: {
+    total_bytes: number
+    used_bytes: number
+    free_bytes: number
+    usage_percent: number
+    free_percent: number
+  }
+  recordings: {
+    total_bytes: number
+    oldest_days: number
+    days_breakdown: Array<{age_days: number, size_bytes: number, count: number}>
+  }
+  cameras: {
+    active_count: number
+    estimated_gb_per_camera_per_day: number
+  }
+  warnings: Array<{level: string, message: string}>
+  can_increase_retention: boolean
+}
+
+interface CleanupStatus {
+  is_running: boolean
+  last_run: string | null
+  last_files_deleted: number
+  last_bytes_freed: number
+  next_run: string | null
 }
 
 const STORAGE_ICONS: Record<string, React.ReactNode> = {
@@ -144,6 +182,13 @@ export function StorageManager() {
   const [formError, setFormError] = useState("")
   const [submitting, setSubmitting] = useState(false)
   
+  // Retention management state
+  const [retentionAnalysis, setRetentionAnalysis] = useState<Record<number, RetentionAnalysis>>({})
+  const [cleanupStatus, setCleanupStatus] = useState<CleanupStatus | null>(null)
+  const [updatingRetention, setUpdatingRetention] = useState<number | null>(null)
+  const [runningCleanup, setRunningCleanup] = useState(false)
+  const [expandedVolume, setExpandedVolume] = useState<number | null>(null)
+  
   const fetchOverview = useCallback(async () => {
     try {
       const response = await fetch("http://localhost:8001/storage/overview")
@@ -174,6 +219,97 @@ export function StorageManager() {
     fetchOverview()
     fetchStorageTypes()
   }, [fetchOverview, fetchStorageTypes])
+  
+  // Fetch retention analysis for a volume
+  const fetchRetentionAnalysis = async (volumeId: number) => {
+    try {
+      const response = await fetch(`http://localhost:8001/storage/${volumeId}/retention/analysis`)
+      if (response.ok) {
+        const data = await response.json()
+        setRetentionAnalysis(prev => ({ ...prev, [volumeId]: data }))
+      }
+    } catch (error) {
+      console.error("Error fetching retention analysis:", error)
+    }
+  }
+  
+  // Fetch cleanup status
+  const fetchCleanupStatus = async () => {
+    try {
+      const response = await fetch("http://localhost:8001/storage/cleanup/status")
+      if (response.ok) {
+        const data = await response.json()
+        setCleanupStatus(data)
+      }
+    } catch (error) {
+      console.error("Error fetching cleanup status:", error)
+    }
+  }
+  
+  // Update retention for a volume
+  const handleUpdateRetention = async (volumeId: number, retentionDays: number, autoAdjust: boolean = true) => {
+    setUpdatingRetention(volumeId)
+    try {
+      const response = await fetch(`http://localhost:8001/storage/${volumeId}/retention`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ retention_days: retentionDays, auto_adjust: autoAdjust }),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        // Update local state with new analysis
+        setRetentionAnalysis(prev => ({ ...prev, [volumeId]: data }))
+        await fetchOverview()
+      }
+    } catch (error) {
+      console.error("Error updating retention:", error)
+    } finally {
+      setUpdatingRetention(null)
+    }
+  }
+  
+  // Trigger manual cleanup for a volume
+  const handleManualCleanup = async (volumeId: number) => {
+    if (!confirm("¿Ejecutar limpieza manual? Se eliminarán grabaciones antiguas según la política de retención.")) {
+      return
+    }
+    setRunningCleanup(true)
+    try {
+      const response = await fetch(`http://localhost:8001/storage/${volumeId}/cleanup`, {
+        method: "POST",
+      })
+      if (response.ok) {
+        const data = await response.json()
+        alert(`Limpieza completada: ${data.files_deleted} archivos eliminados, ${formatBytes(data.bytes_freed)} liberados`)
+        await fetchOverview()
+        await fetchRetentionAnalysis(volumeId)
+      }
+    } catch (error) {
+      console.error("Error running cleanup:", error)
+      alert("Error al ejecutar limpieza")
+    } finally {
+      setRunningCleanup(false)
+    }
+  }
+  
+  // Toggle volume expansion and load analysis
+  const toggleVolumeExpansion = async (volumeId: number) => {
+    if (expandedVolume === volumeId) {
+      setExpandedVolume(null)
+    } else {
+      setExpandedVolume(volumeId)
+      if (!retentionAnalysis[volumeId]) {
+        await fetchRetentionAnalysis(volumeId)
+      }
+    }
+  }
+  
+  // Fetch cleanup status on mount
+  useEffect(() => {
+    fetchCleanupStatus()
+    const interval = setInterval(fetchCleanupStatus, 60000) // Update every minute
+    return () => clearInterval(interval)
+  }, [])
   
   const handleCheckVolume = async (volumeId: number) => {
     setCheckingId(volumeId)
@@ -348,9 +484,48 @@ export function StorageManager() {
             <div className="text-2xl font-bold">
               {overview?.total_recordings || 0}
             </div>
-          </CardContent>
+      </CardContent>
         </Card>
       </div>
+      
+      {/* Cleanup Status Card */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Limpieza Automática
+          </CardTitle>
+          <CardDescription>
+            El sistema limpia automáticamente las grabaciones antiguas según la política de retención
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="text-center p-3 bg-muted rounded-lg">
+              <div className="text-sm text-muted-foreground mb-1">Estado</div>
+              <div className={`font-medium ${cleanupStatus?.is_running ? 'text-yellow-600' : 'text-green-600'}`}>
+                {cleanupStatus?.is_running ? 'Ejecutando...' : 'En espera'}
+              </div>
+            </div>
+            <div className="text-center p-3 bg-muted rounded-lg">
+              <div className="text-sm text-muted-foreground mb-1">Última ejecución</div>
+              <div className="font-medium">
+                {cleanupStatus?.last_run 
+                  ? new Date(cleanupStatus.last_run).toLocaleString() 
+                  : 'Nunca'}
+              </div>
+            </div>
+            <div className="text-center p-3 bg-muted rounded-lg">
+              <div className="text-sm text-muted-foreground mb-1">Archivos eliminados</div>
+              <div className="font-medium">{cleanupStatus?.last_files_deleted || 0}</div>
+            </div>
+            <div className="text-center p-3 bg-muted rounded-lg">
+              <div className="text-sm text-muted-foreground mb-1">Espacio liberado</div>
+              <div className="font-medium">{formatBytes(cleanupStatus?.last_bytes_freed || 0)}</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
       
       {/* Volumes Table */}
       <Card>
@@ -623,81 +798,236 @@ export function StorageManager() {
                 </TableRow>
               ) : (
                 overview.volumes.map((volume) => (
-                  <TableRow key={volume.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {volume.is_primary && (
-                          <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                        )}
-                        <span className="font-medium">{volume.name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {STORAGE_ICONS[volume.storage_type]}
-                        <span className="text-sm">
-                          {storageTypes.find(t => t.type === volume.storage_type)?.name || volume.storage_type}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {volume.server_address 
-                        ? `${volume.server_address}/${volume.share_name || ''}`
-                        : volume.host_path || volume.mount_path
-                      }
-                    </TableCell>
-                    <TableCell>
-                      <div className="w-32">
-                        <div className="text-xs text-muted-foreground mb-1">
-                          {formatBytes(volume.used_bytes)} / {formatBytes(volume.total_bytes)}
+                  <>
+                    <TableRow 
+                      key={volume.id} 
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => toggleVolumeExpansion(volume.id)}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {volume.is_primary && (
+                            <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                          )}
+                          <span className="font-medium">{volume.name}</span>
                         </div>
-                        <Progress 
-                          value={getUsagePercent(volume.used_bytes, volume.total_bytes)} 
-                          className="h-2" 
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={STATUS_COLORS[volume.status] || ""}>
-                        {STATUS_LABELS[volume.status] || volume.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {volume.retention_days} días
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleCheckVolume(volume.id)}
-                          disabled={checkingId === volume.id}
-                          title="Verificar estado"
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {STORAGE_ICONS[volume.storage_type]}
+                          <span className="text-sm">
+                            {storageTypes.find(t => t.type === volume.storage_type)?.name || volume.storage_type}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {volume.server_address 
+                          ? `${volume.server_address}/${volume.share_name || ''}`
+                          : volume.host_path || volume.mount_path
+                        }
+                      </TableCell>
+                      <TableCell>
+                        <div className="w-32">
+                          <div className="text-xs text-muted-foreground mb-1">
+                            {formatBytes(volume.used_bytes)} / {formatBytes(volume.total_bytes)}
+                          </div>
+                          <Progress 
+                            value={getUsagePercent(volume.used_bytes, volume.total_bytes)} 
+                            className="h-2" 
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={STATUS_COLORS[volume.status] || ""}>
+                          {STATUS_LABELS[volume.status] || volume.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="gap-1"
+                          onClick={(e) => { e.stopPropagation(); toggleVolumeExpansion(volume.id); }}
                         >
-                          <RefreshCw className={`h-4 w-4 ${checkingId === volume.id ? 'animate-spin' : ''}`} />
+                          <Clock className="h-3 w-3" />
+                          {volume.retention_days} días
                         </Button>
-                        {!volume.is_primary && (
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleSetPrimary(volume.id)}
-                            title="Establecer como primario"
+                            onClick={() => handleCheckVolume(volume.id)}
+                            disabled={checkingId === volume.id}
+                            title="Verificar estado"
                           >
-                            <Star className="h-4 w-4" />
+                            <RefreshCw className={`h-4 w-4 ${checkingId === volume.id ? 'animate-spin' : ''}`} />
                           </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDelete(volume.id, volume.name)}
-                          className="text-destructive"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                          {!volume.is_primary && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleSetPrimary(volume.id)}
+                              title="Establecer como primario"
+                            >
+                              <Star className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleDelete(volume.id, volume.name)}
+                            className="text-destructive"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {/* Expanded retention settings */}
+                    {expandedVolume === volume.id && (
+                      <TableRow key={`${volume.id}-expanded`}>
+                        <TableCell colSpan={7} className="bg-muted/30 p-4">
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-medium flex items-center gap-2">
+                                <Settings className="h-4 w-4" />
+                                Configuración de Retención - {volume.name}
+                              </h4>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleManualCleanup(volume.id)}
+                                disabled={runningCleanup}
+                              >
+                                {runningCleanup ? (
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                )}
+                                Limpiar ahora
+                              </Button>
+                            </div>
+                            
+                            {retentionAnalysis[volume.id] ? (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Left column: Retention slider */}
+                                <div className="space-y-4">
+                                  <div>
+                                    <Label className="text-sm font-medium">
+                                      Días de retención: {retentionAnalysis[volume.id].current_retention_days}
+                                    </Label>
+                                    <div className="flex items-center gap-4 mt-2">
+                                      <span className="text-xs text-muted-foreground">1</span>
+                                      <Slider
+                                        value={[retentionAnalysis[volume.id].current_retention_days]}
+                                        onValueChange={(value) => {
+                                          setRetentionAnalysis(prev => ({
+                                            ...prev,
+                                            [volume.id]: { ...prev[volume.id], current_retention_days: value[0] }
+                                          }))
+                                        }}
+                                        onValueCommit={(value) => handleUpdateRetention(volume.id, value[0])}
+                                        min={1}
+                                        max={90}
+                                        step={1}
+                                        className="flex-1"
+                                        disabled={updatingRetention === volume.id}
+                                      />
+                                      <span className="text-xs text-muted-foreground">90</span>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Show warnings */}
+                                  {retentionAnalysis[volume.id].warnings.map((warning, idx) => (
+                                    <Alert key={idx} variant={warning.level === 'critical' ? 'destructive' : 'default'}>
+                                      <AlertTriangle className="h-4 w-4" />
+                                      <AlertDescription>
+                                        {warning.message}
+                                      </AlertDescription>
+                                    </Alert>
+                                  ))}
+                                  
+                                  {retentionAnalysis[volume.id].recommended_retention_days < 
+                                   retentionAnalysis[volume.id].current_retention_days && (
+                                    <Alert>
+                                      <AlertCircle className="h-4 w-4" />
+                                      <AlertDescription>
+                                        Recomendado: <strong>{retentionAnalysis[volume.id].recommended_retention_days} días</strong> 
+                                        {" "}según el espacio disponible
+                                        <Button 
+                                          variant="link" 
+                                          size="sm" 
+                                          className="ml-2 h-auto p-0"
+                                          onClick={() => handleUpdateRetention(
+                                            volume.id, 
+                                            retentionAnalysis[volume.id].recommended_retention_days
+                                          )}
+                                        >
+                                          Aplicar
+                                        </Button>
+                                      </AlertDescription>
+                                    </Alert>
+                                  )}
+                                </div>
+                                
+                                {/* Right column: Statistics */}
+                                <div className="grid grid-cols-2 gap-3 text-sm">
+                                  <div className="p-3 bg-background rounded-lg border">
+                                    <div className="text-muted-foreground">Espacio libre</div>
+                                    <div className="font-medium text-lg">
+                                      {formatBytes(retentionAnalysis[volume.id].storage.free_bytes)}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {retentionAnalysis[volume.id].storage.free_percent.toFixed(1)}%
+                                    </div>
+                                  </div>
+                                  <div className="p-3 bg-background rounded-lg border">
+                                    <div className="text-muted-foreground">Cámaras activas</div>
+                                    <div className="font-medium text-lg">
+                                      {retentionAnalysis[volume.id].cameras.active_count}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      ~{retentionAnalysis[volume.id].cameras.estimated_gb_per_camera_per_day} GB/día c/u
+                                    </div>
+                                  </div>
+                                  <div className="p-3 bg-background rounded-lg border">
+                                    <div className="text-muted-foreground">Grabación más antigua</div>
+                                    <div className="font-medium text-lg">
+                                      {retentionAnalysis[volume.id].recordings.oldest_days} días
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {formatBytes(retentionAnalysis[volume.id].recordings.total_bytes)} total
+                                    </div>
+                                  </div>
+                                  <div className="p-3 bg-background rounded-lg border">
+                                    <div className="text-muted-foreground">Retención recomendada</div>
+                                    <div className={`font-medium text-lg ${
+                                      retentionAnalysis[volume.id].recommended_retention_days < 
+                                      retentionAnalysis[volume.id].current_retention_days 
+                                        ? 'text-yellow-600' 
+                                        : 'text-green-600'
+                                    }`}>
+                                      {retentionAnalysis[volume.id].recommended_retention_days} días
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {retentionAnalysis[volume.id].can_increase_retention ? 'Puede aumentar' : 'Espacio limitado'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-center py-8">
+                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
                 ))
               )}
             </TableBody>
