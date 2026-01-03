@@ -911,25 +911,42 @@ export function StorageManager() {
                               </Button>
                             </div>
                             
-                            {retentionAnalysis[volume.id] ? (
+                            {(() => {
+                              const analysis = retentionAnalysis[volume.id]
+                              if (!analysis) {
+                                return (
+                                  <div className="flex items-center justify-center py-8">
+                                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                  </div>
+                                )
+                              }
+                              return (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {/* Left column: Retention slider */}
                                 <div className="space-y-4">
                                   <div>
                                     <Label className="text-sm font-medium">
-                                      Días de retención: {retentionAnalysis[volume.id].current_retention_days}
+                                      Días de retención: {analysis.current_retention_days}
                                     </Label>
                                     <div className="flex items-center gap-4 mt-2">
                                       <span className="text-xs text-muted-foreground">1</span>
                                       <Slider
-                                        value={[retentionAnalysis[volume.id].current_retention_days]}
+                                        value={[analysis.current_retention_days]}
                                         onValueChange={(value) => {
-                                          setRetentionAnalysis(prev => ({
-                                            ...prev,
-                                            [volume.id]: { ...prev[volume.id], current_retention_days: value[0] }
-                                          }))
+                                          const newValue = value[0]
+                                          if (newValue !== undefined) {
+                                            setRetentionAnalysis(prev => ({
+                                              ...prev,
+                                              [volume.id]: { ...analysis, current_retention_days: newValue }
+                                            }))
+                                          }
                                         }}
-                                        onValueCommit={(value) => handleUpdateRetention(volume.id, value[0])}
+                                        onValueCommit={(value) => {
+                                          const newValue = value[0]
+                                          if (newValue !== undefined) {
+                                            handleUpdateRetention(volume.id, newValue)
+                                          }
+                                        }}
                                         min={1}
                                         max={90}
                                         step={1}
@@ -941,7 +958,7 @@ export function StorageManager() {
                                   </div>
                                   
                                   {/* Show warnings */}
-                                  {retentionAnalysis[volume.id].warnings.map((warning, idx) => (
+                                  {analysis.warnings.map((warning, idx) => (
                                     <Alert key={idx} variant={warning.level === 'critical' ? 'destructive' : 'default'}>
                                       <AlertTriangle className="h-4 w-4" />
                                       <AlertDescription>
@@ -950,12 +967,12 @@ export function StorageManager() {
                                     </Alert>
                                   ))}
                                   
-                                  {retentionAnalysis[volume.id].recommended_retention_days < 
-                                   retentionAnalysis[volume.id].current_retention_days && (
+                                  {analysis.recommended_retention_days < 
+                                   analysis.current_retention_days && (
                                     <Alert>
                                       <AlertCircle className="h-4 w-4" />
                                       <AlertDescription>
-                                        Recomendado: <strong>{retentionAnalysis[volume.id].recommended_retention_days} días</strong> 
+                                        Recomendado: <strong>{analysis.recommended_retention_days} días</strong> 
                                         {" "}según el espacio disponible
                                         <Button 
                                           variant="link" 
@@ -963,7 +980,7 @@ export function StorageManager() {
                                           className="ml-2 h-auto p-0"
                                           onClick={() => handleUpdateRetention(
                                             volume.id, 
-                                            retentionAnalysis[volume.id].recommended_retention_days
+                                            analysis.recommended_retention_days
                                           )}
                                         >
                                           Aplicar
@@ -978,51 +995,48 @@ export function StorageManager() {
                                   <div className="p-3 bg-background rounded-lg border">
                                     <div className="text-muted-foreground">Espacio libre</div>
                                     <div className="font-medium text-lg">
-                                      {formatBytes(retentionAnalysis[volume.id].storage.free_bytes)}
+                                      {formatBytes(analysis.storage.free_bytes)}
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      {retentionAnalysis[volume.id].storage.free_percent.toFixed(1)}%
+                                      {analysis.storage.free_percent.toFixed(1)}%
                                     </div>
                                   </div>
                                   <div className="p-3 bg-background rounded-lg border">
                                     <div className="text-muted-foreground">Cámaras activas</div>
                                     <div className="font-medium text-lg">
-                                      {retentionAnalysis[volume.id].cameras.active_count}
+                                      {analysis.cameras.active_count}
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      ~{retentionAnalysis[volume.id].cameras.estimated_gb_per_camera_per_day} GB/día c/u
+                                      ~{analysis.cameras.estimated_gb_per_camera_per_day} GB/día c/u
                                     </div>
                                   </div>
                                   <div className="p-3 bg-background rounded-lg border">
                                     <div className="text-muted-foreground">Grabación más antigua</div>
                                     <div className="font-medium text-lg">
-                                      {retentionAnalysis[volume.id].recordings.oldest_days} días
+                                      {analysis.recordings.oldest_days} días
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      {formatBytes(retentionAnalysis[volume.id].recordings.total_bytes)} total
+                                      {formatBytes(analysis.recordings.total_bytes)} total
                                     </div>
                                   </div>
                                   <div className="p-3 bg-background rounded-lg border">
                                     <div className="text-muted-foreground">Retención recomendada</div>
                                     <div className={`font-medium text-lg ${
-                                      retentionAnalysis[volume.id].recommended_retention_days < 
-                                      retentionAnalysis[volume.id].current_retention_days 
+                                      analysis.recommended_retention_days < 
+                                      analysis.current_retention_days 
                                         ? 'text-yellow-600' 
                                         : 'text-green-600'
                                     }`}>
-                                      {retentionAnalysis[volume.id].recommended_retention_days} días
+                                      {analysis.recommended_retention_days} días
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      {retentionAnalysis[volume.id].can_increase_retention ? 'Puede aumentar' : 'Espacio limitado'}
+                                      {analysis.can_increase_retention ? 'Puede aumentar' : 'Espacio limitado'}
                                     </div>
                                   </div>
                                 </div>
                               </div>
-                            ) : (
-                              <div className="flex items-center justify-center py-8">
-                                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                              </div>
-                            )}
+                              )
+                            })()}
                           </div>
                         </TableCell>
                       </TableRow>
