@@ -34,6 +34,8 @@ services:
         - traefik.http.routers.vigila-web.entrypoints=websecure
         - traefik.http.routers.vigila-web.tls.certresolver=letsencrypt
         - traefik.http.services.vigila-web.loadbalancer.server.port=3000
+        - traefik.http.routers.vigila-web-router.service=vigila-web-service
+        - traefik.http.services.vigila-web-service.loadbalancer.server.port=3000
     networks:
       - dokploy-network
 
