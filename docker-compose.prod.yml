@@ -27,6 +27,13 @@ services:
       resources:
         limits:
           memory: 512M
+      labels: 
+        - traefik.enable=true
+        - traefik.docker.network=dokploy-network
+        - traefik.http.routers.vigila-web.rule=Host(`vigila.itcore.es`)
+        - traefik.http.routers.vigila-web.entrypoints=websecure
+        - traefik.http.routers.vigila-web.tls.certresolver=letsencrypt
+        - traefik.http.services.vigila-web.loadbalancer.server.port=3000
     networks:
       - dokploy-network
 
