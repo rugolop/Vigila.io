@@ -52,7 +52,8 @@ services:
           memory: 512M
 
   mediamtx:
-    image: bluenviron/mediamtx:latest-ffmpeg
+    image: docker.io/bluenviron/mediamtx:latest-ffmpeg
+    pull_policy: always
     container_name: vigila-mediamtx-prod
     ports:
       - "8554:8554"
@@ -68,7 +69,8 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:15-alpine
+    image: docker.io/library/postgres:15-alpine
+    pull_policy: always
     container_name: vigila-postgres-prod
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
