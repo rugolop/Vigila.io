@@ -27,6 +27,8 @@ services:
       resources:
         limits:
           memory: 512M
+    networks:
+      - dokploy-network
 
   backend:
     build:
@@ -50,6 +52,8 @@ services:
       resources:
         limits:
           memory: 512M
+    networks:
+      - dokploy-network
 
   mediamtx:
     image: docker.io/bluenviron/mediamtx:latest-ffmpeg
@@ -67,6 +71,8 @@ services:
       - ./mediamtx.yml:/mediamtx.yml
       - recordings_prod:/recordings
     restart: unless-stopped
+    networks:
+      - dokploy-network
 
   postgres:
     image: docker.io/library/postgres:15-alpine
@@ -79,7 +85,13 @@ services:
     volumes:
       - postgres_data_prod:/var/lib/postgresql/data
     restart: unless-stopped
+    networks:
+      - dokploy-network
 
 volumes:
   postgres_data_prod:
   recordings_prod:
+
+networks:
+  dokploy-network:
+    external: true
