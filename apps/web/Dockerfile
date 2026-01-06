@@ -14,6 +14,11 @@ COPY packages/ui/package.json ./packages/ui/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
 
+# Copiar archivos de configuración del monorepo (necesarios para el build)
+COPY packages/typescript-config/*.json ./packages/typescript-config/
+COPY packages/eslint-config/*.js ./packages/eslint-config/
+COPY turbo.json ./
+
 # Instalar dependencias
 RUN npm ci --legacy-peer-deps
 

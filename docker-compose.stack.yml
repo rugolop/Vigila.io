@@ -10,7 +10,7 @@ version: '3.8'
 
 services:
   web:
-    image: ${REGISTRY:-ghcr.io/rugolop/vigila-web}:${TAG:-latest}
+    image: rugolop/vigila-web:${TAG:-latest}
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
@@ -37,7 +37,7 @@ services:
       - dokploy-network
 
   backend:
-    image: ${REGISTRY:-ghcr.io/rugolop/vigila-backend}:${TAG:-latest}
+    image: rugolop/vigila-backend:${TAG:-latest}
     ports:
       - "8001:8001"
     environment:

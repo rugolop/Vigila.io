@@ -1,0 +1,64 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs
+.next
+**/.next
+.turbo
+**/.turbo
+dist
+**/dist
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files (se pasan como build args o variables de entorno)
+.env
+.env.*
+!.env.example
+
+# Tests
+coverage
+**/__tests__
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+
+# Documentation
+*.md
+!README.md
+
+# Recordings (datos locales)
+recordings
+
+# Python cache (del backend)
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+
+# Docker compose files (no necesarios dentro de la imagen)
+docker-compose*.yml
+Dockerfile*
+
+# Scripts locales
+scripts
