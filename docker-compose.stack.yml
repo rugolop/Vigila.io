@@ -14,7 +14,8 @@ services:
     image: rugolop/vigila-web:${TAG:-latest}
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      # NEXT_PUBLIC_API_URL is baked at build time in GitHub Actions
+      # Don't override it here or it will use HTTP instead of HTTPS
       - BETTER_AUTH_URL=${BETTER_AUTH_URL}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
       - DATABASE_URL=${DATABASE_URL_AUTH}
