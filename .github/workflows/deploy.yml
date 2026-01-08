@@ -1,0 +1,86 @@
+name: 🚀 Build and Deploy to Dokploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  WEB_IMAGE: rugolop/vigila-web
+  BACKEND_IMAGE: rugolop/vigila-backend
+
+jobs:
+  build-and-push:
+    name: 🔨 Build & Push Images
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 🏗️ Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🐳 Build and push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/backend
+          file: apps/backend/Dockerfile.prod
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.BACKEND_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.BACKEND_IMAGE }}:buildcache,mode=max
+
+      - name: 🌐 Build and push Web
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.WEB_IMAGE }}:latest
+            ${{ env.WEB_IMAGE }}:${{ github.sha }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.vigila.itcore.es
+            BETTER_AUTH_URL=https://vigila.itcore.es
+          cache-from: type=registry,ref=${{ env.WEB_IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.WEB_IMAGE }}:buildcache,mode=max
+
+  deploy:
+    name: 🚢 Deploy to Dokploy
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🔄 Update services via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DOKPLOY_HOST }}
+          username: ${{ secrets.DOKPLOY_USER }}
+          key: ${{ secrets.DOKPLOY_SSH_KEY }}
+          port: ${{ secrets.DOKPLOY_SSH_PORT || 22 }}
+          script: |
+            echo "🔄 Actualizando servicio backend..."
+            docker service update --image ${{ env.BACKEND_IMAGE }}:latest vigila_backend --force
+            
+            echo "🔄 Actualizando servicio web..."
+            docker service update --image ${{ env.WEB_IMAGE }}:latest vigila_web --force
+            
+            echo "✅ Despliegue completado!"
+
+      - name: ✅ Deployment Success
+        run: |
+          echo "🎉 Despliegue exitoso!"
+          echo "Backend: ${{ env.BACKEND_IMAGE }}:${{ github.sha }}"
+          echo "Web: ${{ env.WEB_IMAGE }}:${{ github.sha }}"

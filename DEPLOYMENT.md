@@ -121,7 +121,35 @@ DATABASE_URL=postgresql://vigila_preprod:PASSWORD@postgres:5432/vigila_preprod
 
 ---
 
-## 🔄 Flujo de Trabajo Git
+## 🔄 Flujo de Trabajo Git y Despliegue Automático
+
+### Configuración Inicial de GitHub Actions
+
+**1. Configurar Secrets en GitHub:**
+
+Ve a tu repositorio → Settings → Secrets and variables → Actions → New repository secret:
+
+```
+DOCKER_USERNAME: tu-usuario-dockerhub (ej: rugolop)
+DOCKER_PASSWORD: tu-token-dockerhub
+DOKPLOY_HOST: IP o dominio de tu servidor (ej: raspberryserver2.local o 192.168.1.100)
+DOKPLOY_USER: usuario SSH (ej: root o dokploy)
+DOKPLOY_SSH_KEY: tu clave privada SSH (el contenido completo de ~/.ssh/id_rsa)
+DOKPLOY_SSH_PORT: puerto SSH (opcional, por defecto 22)
+```
+
+**2. Generar SSH Key (si no tienes):**
+
+```bash
+# En tu máquina local
+ssh-keygen -t rsa -b 4096 -C "github-actions"
+
+# Copiar clave pública al servidor
+ssh-copy-id usuario@servidor
+
+# Copiar clave privada para GitHub (todo el contenido)
+cat ~/.ssh/id_rsa
+```
 
 ### Desarrollo Local
 ```bash
@@ -132,22 +160,27 @@ git commit -m "feat: nueva funcionalidad"
 git push origin feature/nueva-funcionalidad
 ```
 
-### Desplegar a Preprod
+### Desplegar a Producción (Automático) 🚀
+
 ```bash
-# Merge a preprod para testing
-git checkout preprod
-git merge main  # o merge del feature branch
-git push origin preprod
-# Dokploy detectará el cambio y desplegará automáticamente
+# Merge a main y push
+git checkout main
+git merge feature/nueva-funcionalidad
+git push origin main
+
+# GitHub Actions automáticamente:
+# 1. ✅ Construye las imágenes Docker
+# 2. ✅ Las sube a Docker Hub (rugolop/vigila-web:latest, rugolop/vigila-backend:latest)
+# 3. ✅ Se conecta al servidor vía SSH
+# 4. ✅ Actualiza los servicios del stack
 ```
 
-### Desplegar a Producción
+### Despliegue Manual (si es necesario)
+
 ```bash
-# Una vez validado en preprod, merge a main
-git checkout main
-git merge preprod
-git push origin main
-# Dokploy desplegará a producción
+# Desde tu servidor o vía SSH
+docker service update --image rugolop/vigila-web:latest vigila_web --force
+docker service update --image rugolop/vigila-backend:latest vigila_backend --force
 ```
 
 ---
@@ -173,6 +206,28 @@ git pull origin main
 git checkout -b preprod
 git push -u origin preprod
 ```
+
+---
+
+## 🔍 Verificar Despliegue
+
+### Ver estado de los servicios
+```bash
+docker service ls
+docker service ps vigila_web
+docker service ps vigila_backend
+```
+
+### Ver logs en tiempo real
+```bash
+docker service logs -f vigila_web
+docker service logs -f vigila_backend
+```
+
+### Ver GitHub Actions
+- Ve a tu repositorio → Actions
+- Verás el workflow "🚀 Build and Deploy to Dokploy"
+- Revisa los logs de cada paso
 
 ---
 
