@@ -69,7 +69,7 @@ jobs:
           host: ${{ secrets.DOKPLOY_HOST }}
           username: ${{ secrets.DOKPLOY_USER }}
           key: ${{ secrets.DOKPLOY_SSH_KEY }}
-          port: ${{ secrets.DOKPLOY_SSH_PORT || 22 }}
+          port: 22
           script: |
             echo "🔄 Actualizando servicio backend..."
             docker service update --image ${{ env.BACKEND_IMAGE }}:latest vigila_backend --force
