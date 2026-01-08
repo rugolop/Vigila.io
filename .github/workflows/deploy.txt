@@ -1,4 +1,4 @@
-name: 🚀 Build and Push to Docker Hub
+name: 🚀 Build and Deploy to Dokploy
 
 on:
   push:
@@ -54,14 +54,34 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.vigila.itcore.es
             BETTER_AUTH_URL=https://vigila.itcore.es
+            NEXT_PUBLIC_BETTER_AUTH_URL=https://vigila.itcore.es
           cache-from: type=registry,ref=${{ env.WEB_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.WEB_IMAGE }}:buildcache,mode=max
 
-      - name: ✅ Build Complete
-        run: |
-          echo "🎉 Imágenes construidas y subidas exitosamente!"
-          echo "Backend: ${{ env.BACKEND_IMAGE }}:latest"
-          echo "Web: ${{ env.WEB_IMAGE }}:latest"
-          echo ""
-          echo "⏳ Watchtower actualizará los servicios en ~5 minutos"
+  deploy:
+    name: 🚢 Deploy to Dokploy
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🔄 Update services via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DOKPLOY_HOST }}
+          username: ${{ secrets.DOKPLOY_USER }}
+          key: ${{ secrets.DOKPLOY_SSH_KEY }}
+          port: 22
+          script: |
+            echo "🔄 Actualizando servicio backend..."
+            docker service update --image ${{ env.BACKEND_IMAGE }}:latest vigila_backend --force
+            
+            echo "🔄 Actualizando servicio web..."
+            docker service update --image ${{ env.WEB_IMAGE }}:latest vigila_web --force
+            
+            echo "✅ Despliegue completado!"
 
+      - name: ✅ Deployment Success
+        run: |
+          echo "🎉 Despliegue exitoso!"
+          echo "Backend: ${{ env.BACKEND_IMAGE }}:${{ github.sha }}"
+          echo "Web: ${{ env.WEB_IMAGE }}:${{ github.sha }}"
