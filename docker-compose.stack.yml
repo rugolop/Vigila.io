@@ -111,6 +111,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - SLEEP_TIME=5m
+      - REGISTRY_USER=${DOCKER_USERNAME}
+      - REGISTRY_PASSWORD=${DOCKER_PASSWORD}
     deploy:
       replicas: 1
       placement:
