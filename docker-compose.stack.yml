@@ -111,8 +111,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - SLEEP_TIME=5m
-      - REGISTRY_USER=${DOCKER_USERNAME}
-      - REGISTRY_PASSWORD=${DOCKER_PASSWORD}
+      - FILTER_SERVICES=label=com.docker.stack.namespace=vigilaio-vigila-o5ec3m
+      - REGISTRY_USER=${DOCKER_USERNAME:-}
+      - REGISTRY_PASSWORD=${DOCKER_PASSWORD:-}
     deploy:
       replicas: 1
       placement:
