@@ -46,7 +46,12 @@ jobs:
       - name: 🏗️ Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🐳 Build and push Backend
+      - name: � Debug build args
+        run: |
+          echo "NEXT_PUBLIC_API_URL will be: https://api.vigila.itcore.es"
+          echo "BETTER_AUTH_URL will be: https://vigila.itcore.es"
+
+      - name: �🐳 Build and push Backend
         uses: docker/build-push-action@v5
         with:
           context: apps/backend
