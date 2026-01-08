@@ -105,20 +105,19 @@ services:
     networks:
       - dokploy-network
 
-  watchtower:
-    image: containrrr/watchtower:latest
-    command: --interval 300 --cleanup --include-stopped --revive-stopped
+  shepherd:
+    image: containrrr/shepherd:latest
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - WATCHTOWER_POLL_INTERVAL=300
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_INCLUDE_RESTARTING=true
-      - WATCHTOWER_ROLLING_RESTART=true
+      - SLEEP_TIME=5m
+      - IGNORELIST_SERVICES=shepherd
+      - FILTER_SERVICES=label=com.docker.stack.namespace=vigilaio-vigila-o5ec3m
     deploy:
       replicas: 1
       placement:
         constraints:
+          - node.role == manager
           - node.hostname == raspberryserver2
       restart_policy:
         condition: on-failure
