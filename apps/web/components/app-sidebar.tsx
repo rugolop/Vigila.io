@@ -1,5 +1,8 @@
+"use client"
+
 import * as React from "react"
-import { Video, FolderOpen, Settings, LayoutDashboard, Server } from "lucide-react"
+import { Video, FolderOpen, Settings, LayoutDashboard, Server, Users } from "lucide-react"
+import { useTenant } from "@/hooks/use-tenant"
 
 import {
   Sidebar,
@@ -45,6 +48,12 @@ const navigation = [
     title: "Administración",
     items: [
       {
+        title: "Usuarios",
+        url: "/dashboard/users",
+        icon: Users,
+        requiredPermission: "canManageUsers" as const, // Admin o superior
+      },
+      {
         title: "Agentes Locales",
         url: "/agents",
         icon: Server,
@@ -59,6 +68,21 @@ const navigation = [
 ]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { hasPermission, loading } = useTenant()
+
+  const filterItemsByPermission = (items: typeof navigation[0]["items"]) => {
+    return items.filter(item => {
+      // Si no requiere permiso, mostrar siempre
+      if (!item.requiredPermission) return true
+      
+      // Si está cargando, no mostrar (evita flash de contenido)
+      if (loading) return false
+      
+      // Verificar permiso
+      return hasPermission(item.requiredPermission)
+    })
+  }
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="border-b px-6 py-4">
@@ -68,25 +92,32 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
       <SidebarContent>
-        {navigation.map((group) => (
-          <SidebarGroup key={group.title}>
-            <SidebarGroupLabel>{group.title}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {group.items.map((item) => (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild>
-                      <a href={item.url} className="flex items-center gap-3">
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ))}
+        {navigation.map((group) => {
+          const visibleItems = filterItemsByPermission(group.items)
+          
+          // No mostrar el grupo si no tiene items visibles
+          if (visibleItems.length === 0) return null
+          
+          return (
+            <SidebarGroup key={group.title}>
+              <SidebarGroupLabel>{group.title}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {visibleItems.map((item) => (
+                    <SidebarMenuItem key={item.title}>
+                      <SidebarMenuButton asChild>
+                        <a href={item.url} className="flex items-center gap-3">
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.title}</span>
+                        </a>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )
+        })}
       </SidebarContent>
       <SidebarFooter className="border-t p-4">
         <p className="text-xs text-muted-foreground">v1.0.0</p>

@@ -129,7 +129,7 @@ export const CameraDiscovery = () => {
     setTestingConnection(true)
     setConnectionResult(null)
     try {
-      const response = await fetch(`${API_URL}/cameras/test-rtsp`, {
+      const response = await fetch(`${API_URL}/api/cameras/test-rtsp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rtsp_url: url }),
@@ -153,7 +153,7 @@ export const CameraDiscovery = () => {
     setDiscoveredCameras([])
     try {
       const response = await fetch(
-        `${API_URL}/cameras/discover?use_onvif=${useOnvif}&use_port_scan=${usePortScan}&network_range=${encodeURIComponent(networkRange)}`,
+        `${API_URL}/api/cameras/discover?use_onvif=${useOnvif}&use_port_scan=${usePortScan}&network_range=${encodeURIComponent(networkRange)}`,
         { method: "POST" }
       )
       if (response.ok) {
@@ -199,7 +199,7 @@ export const CameraDiscovery = () => {
 
     setAddingCamera(selectedDiscoveredCamera.ip)
     try {
-      const response = await fetch(`${API_URL}/cameras/`, {
+      const response = await fetch(`${API_URL}/api/cameras/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

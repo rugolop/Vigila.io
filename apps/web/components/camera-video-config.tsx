@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 import {
   Select,
   SelectContent,
@@ -132,7 +134,7 @@ export function CameraVideoConfig() {
   
   const fetchCameras = async () => {
     try {
-      const response = await fetch("http://localhost:8001/cameras/")
+      const response = await fetch(`${API_URL}/api/cameras/`)
       if (response.ok) {
         const data = await response.json()
         setCameras(data)
@@ -173,7 +175,7 @@ export function CameraVideoConfig() {
     setConnectionStatus("idle")
     
     try {
-      const response = await fetch("http://localhost:8001/cameras/onvif/test-connection", {
+      const response = await fetch("http://localhost:8001/api/cameras/onvif/test-connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials)
@@ -202,7 +204,7 @@ export function CameraVideoConfig() {
     setConfig(null)
     
     try {
-      const response = await fetch("http://localhost:8001/cameras/onvif/config", {
+      const response = await fetch("http://localhost:8001/api/cameras/onvif/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials)
@@ -262,7 +264,7 @@ export function CameraVideoConfig() {
     setSaving(true)
     
     try {
-      const response = await fetch("http://localhost:8001/cameras/onvif/config", {
+      const response = await fetch("http://localhost:8001/api/cameras/onvif/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

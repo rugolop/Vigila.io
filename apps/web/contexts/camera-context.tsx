@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react"
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+
 interface Camera {
   id: number
   name: string
@@ -27,7 +29,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const fetchCameras = async () => {
     setLoading(true)
     try {
-      const response = await fetch("http://localhost:8001/cameras/")
+      const response = await fetch(`${API_URL}/api/cameras/`)
       if (response.ok) {
         const data = await response.json()
         setCameras(data)

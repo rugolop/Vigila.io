@@ -39,7 +39,7 @@ import {
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 
 // Datos de ejemplo para las gráficas (en producción vendrían del backend)
 const generateActivityData = (days: number) => {

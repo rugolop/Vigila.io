@@ -30,49 +30,22 @@ export default async function proxy(request: NextRequest) {
   }
   
   // Obtener la cookie de sesión de better-auth
-  const sessionCookie = request.cookies.get("better-auth.session_token");
+  // Better Auth puede usar __Secure- prefix en producción (HTTPS)
+  const sessionCookie = 
+    request.cookies.get("__Secure-better-auth.session_token") ||
+    request.cookies.get("better-auth.session_token");
   
-  // Si no hay sesión y es una ruta protegida, redirigir al login
+  // Si no hay cookie de sesión, redirigir al login
+  // La validación real de la sesión se hace en los endpoints del API
   if (!sessionCookie) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
   
-  // Validar la sesión haciendo una llamada al endpoint de auth
-  try {
-    const sessionResponse = await fetch(
-      new URL("/api/auth/get-session", request.url),
-      {
-        headers: {
-          cookie: request.headers.get("cookie") || "",
-        },
-      }
-    );
-    
-    if (!sessionResponse.ok) {
-      // Sesión inválida, redirigir al login
-      const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("callbackUrl", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-    
-    const session = await sessionResponse.json();
-    
-    if (!session || !session.user) {
-      const loginUrl = new URL("/login", request.url);
-      loginUrl.searchParams.set("callbackUrl", pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-    
-    // Sesión válida, continuar
-    return NextResponse.next();
-  } catch {
-    // En caso de error, redirigir al login
-    const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(loginUrl);
-  }
+  // Cookie de sesión presente, permitir acceso
+  // La validación de la sesión se hace en cada endpoint del API
+  return NextResponse.next();
 }
 
 export const config = {

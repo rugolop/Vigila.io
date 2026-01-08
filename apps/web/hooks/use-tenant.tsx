@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from "react"
 import { useSession } from "@/lib/auth-client"
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 
 // Tipos de roles
 export type UserRole = "superadmin" | "admin" | "operator" | "viewer"

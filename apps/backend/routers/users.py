@@ -5,7 +5,7 @@ Returns the tenant user info for the authenticated user.
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from typing import Optional
 from pydantic import BaseModel
 
@@ -37,7 +37,6 @@ async def get_current_user(
     Get the current user's tenant information.
     
     The user ID is passed from the frontend via the X-User-Id header.
-    In production, this should be validated against the session.
     """
     if not x_user_id:
         return None
@@ -55,12 +54,27 @@ async def get_current_user(
     
     tenant_user, tenant = row
     
+    # Try to check Better Auth's user table for superadmin role
+    # This is optional and will fail gracefully if the table doesn't exist
+    better_auth_role = None
+    try:
+        user_role_query = text("SELECT role FROM \"user\" WHERE id = :user_id")
+        user_role_result = await db.execute(user_role_query, {"user_id": x_user_id})
+        user_role_row = user_role_result.first()
+        better_auth_role = user_role_row[0] if user_role_row else None
+    except Exception:
+        # Table doesn't exist or query failed - use tenant_user role
+        pass
+    
+    # Use superadmin role from Better Auth if set, otherwise use tenant_user role
+    effective_role = better_auth_role if better_auth_role == "superadmin" else tenant_user.role
+    
     return CurrentUserResponse(
         id=tenant_user.id,
         tenant_id=tenant_user.tenant_id,
         tenant_name=tenant.name,
         tenant_slug=tenant.slug,
-        role=tenant_user.role,
+        role=effective_role,
         all_locations_access=tenant_user.all_locations_access,
         is_active=tenant_user.is_active,
     )

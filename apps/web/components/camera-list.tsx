@@ -145,7 +145,7 @@ export const CameraList = () => {
     setTestingConnection(true)
     setConnectionResult(null)
     try {
-      const response = await fetch(`${API_URL}/cameras/test-rtsp`, {
+      const response = await fetch(`${API_URL}/api/cameras/test-rtsp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rtsp_url: url }),
@@ -161,7 +161,7 @@ export const CameraList = () => {
 
   const fetchCameras = useCallback(async () => {
     try {
-      const response = await fetch(`${API_URL}/cameras/`)
+      const response = await fetch(`${API_URL}/api/cameras/`)
       if (response.ok) {
         const data = await response.json()
         setCameras(data)
@@ -175,7 +175,7 @@ export const CameraList = () => {
     e.preventDefault()
     setLoading(true)
     try {
-      const response = await fetch(`${API_URL}/cameras/`, {
+      const response = await fetch(`${API_URL}/api/cameras/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -213,7 +213,7 @@ export const CameraList = () => {
     }
 
     try {
-      const response = await fetch(`${API_URL}/cameras/${cameraId}`, {
+      const response = await fetch(`${API_URL}/api/cameras/${cameraId}`, {
         method: "DELETE",
       })
 
@@ -228,7 +228,7 @@ export const CameraList = () => {
   const handleToggleRecording = async (camera: Camera) => {
     setTogglingRecording(camera.id)
     try {
-      const response = await fetch(`${API_URL}/cameras/${camera.id}/recording/toggle`, {
+      const response = await fetch(`${API_URL}/api/cameras/${camera.id}/recording/toggle`, {
         method: "POST",
       })
       
@@ -268,7 +268,7 @@ export const CameraList = () => {
     
     setSaving(true)
     try {
-      const response = await fetch(`${API_URL}/cameras/${editingCamera.id}`, {
+      const response = await fetch(`${API_URL}/api/cameras/${editingCamera.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

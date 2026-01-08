@@ -21,7 +21,7 @@ export const LiveViewGrid = () => {
   const fetchCameras = async () => {
     setLoading(true)
     try {
-      const response = await fetch("http://localhost:8001/cameras/")
+      const response = await fetch("http://localhost:8001/api/cameras/")
       if (response.ok) {
         const data = await response.json()
         setCameras(data)

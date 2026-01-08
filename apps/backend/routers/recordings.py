@@ -16,7 +16,7 @@ from schemas import RecordingLogResponse
 from pydantic import BaseModel
 
 router = APIRouter(
-    prefix="/recordings",
+    prefix="/api/recordings",
     tags=["recordings"],
 )
 
@@ -235,6 +235,32 @@ def get_recording_file_path(folder_path: str, filename: str) -> str:
     # Normalize path separators
     normalized_folder = folder_path.replace("/", os.sep).replace("\\", os.sep)
     return os.path.join(base_path, normalized_folder, filename)
+
+
+
+
+@router.get("/", response_model=List[RecordingInfo])
+async def get_recordings(
+    camera_id: Optional[int] = Query(None),
+    tenant_id: Optional[int] = Query(None),
+    limit: int = Query(100, le=1000),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get recent recordings with optional filters.
+    Returns up to `limit` most recent recordings.
+    """
+    # Use the same logic as search but simplified
+    params = RecordingSearchParams(
+        camera_id=camera_id,
+        tenant_id=tenant_id,
+        page=1,
+        page_size=limit
+    )
+    
+    # Call the search function to reuse logic
+    result = await search_recordings(params, db)
+    return result.recordings
 
 
 @router.post("/search", response_model=PaginatedRecordings)

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import engine, Base, AsyncSessionLocal
-from routers import cameras, recordings, storage, tenants, locations, users, agents
+from routers import cameras, recordings, storage, tenants, locations, users, agents, user_management
 from services.storage_manager import start_storage_manager, stop_storage_manager
 from services.mediamtx import restore_camera_path, sanitize_path_name
 from sqlalchemy.future import select
@@ -101,6 +101,7 @@ app.include_router(storage.router)
 app.include_router(tenants.router)
 app.include_router(locations.router)
 app.include_router(users.router)
+app.include_router(user_management.router)
 app.include_router(agents.router, prefix="/api")
 
 @app.get("/")

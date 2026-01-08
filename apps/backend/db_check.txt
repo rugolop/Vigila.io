@@ -1,0 +1,11 @@
+=== Better Auth 'user' table ===
+  ID: 5DV1gpCWhimyQdVo3RUFp1mdnzE56T7u
+  Email: rugolop@gmail.com
+  Role: superadmin
+
+=== Backend 'tenant_users' table ===
+  ID: 5DV1gpCWhimyQdVo3RUFp1mdnzE56T7u
+  Tenant ID: 1
+  Role: superadmin
+  All Locations Access: True
+  Is Active: True

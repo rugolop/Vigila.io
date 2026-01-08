@@ -62,7 +62,7 @@ class RTSPTestRequest(BaseModel):
 
 
 router = APIRouter(
-    prefix="/cameras",
+    prefix="/api/cameras",
     tags=["cameras"],
     responses={404: {"description": "Not found"}},
 )
