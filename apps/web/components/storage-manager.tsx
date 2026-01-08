@@ -48,11 +48,11 @@ import {
   Settings,
   Clock,
   AlertTriangle,
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
   Loader2,
 } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 
 interface StorageVolume {
   id: number
