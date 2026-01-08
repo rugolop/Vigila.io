@@ -115,7 +115,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.hostname == raspberryserver2
+          - node.role == manager
       restart_policy:
         condition: on-failure
     networks:
