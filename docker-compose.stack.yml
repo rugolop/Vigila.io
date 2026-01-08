@@ -120,9 +120,11 @@ services:
       - SLEEP_TIME=5m
       - FILTER_SERVICES=label=com.docker.stack.namespace=vigilaio-vigila-o5ec3m
       # GitHub Container Registry (ghcr.io) - autenticación requerida
+      - REGISTRY_HOST=ghcr.io
       - REGISTRY_USER=${GITHUB_USERNAME:-rugolop}
       - REGISTRY_PASSWORD=${GITHUB_TOKEN:-}
       # Docker Hub (comentado - volver si cambias a Docker Hub)
+      # - REGISTRY_HOST=docker.io
       # - REGISTRY_USER=${DOCKER_USERNAME:-}
       # - REGISTRY_PASSWORD=${DOCKER_PASSWORD:-}
     deploy:
