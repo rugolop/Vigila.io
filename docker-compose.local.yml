@@ -40,19 +40,19 @@ services:
       - postgres
       - mediamtx
 
-  postgres:
-    image: postgres:15-alpine
-    container_name: vigila-postgres-local
-    ports:
-      - "5433:5432"
-    environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=smartdvr
-      - POSTGRES_INITDB_ARGS=--auth-host=md5
-    volumes:
-      - postgres_data_local:/var/lib/postgresql/data
-    command: ["postgres", "-c", "password_encryption=md5"]
+#   postgres:
+#     image: postgres:15-alpine
+#     container_name: vigila-postgres-local
+#     ports:
+#       - "5433:5432"
+#     environment:
+#       - POSTGRES_USER=user
+#       - POSTGRES_PASSWORD=password
+#       - POSTGRES_DB=smartdvr
+#       - POSTGRES_INITDB_ARGS=--auth-host=md5
+#     volumes:
+#       - postgres_data_local:/var/lib/postgresql/data
+#     command: ["postgres", "-c", "password_encryption=md5"]
 
-volumes:
-  postgres_data_local:
+# volumes:
+#   postgres_data_local:

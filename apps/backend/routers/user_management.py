@@ -43,6 +43,7 @@ class UserUpdateRequest(BaseModel):
     """Request to update an existing user."""
     name: Optional[str] = None
     role: Optional[str] = None
+    tenant_id: Optional[int] = None
     all_locations_access: Optional[bool] = None
     is_active: Optional[bool] = None
 
@@ -52,7 +53,6 @@ class UserDetailResponse(BaseModel):
     id: str
     email: str
     name: Optional[str]
-    email_verified: bool
     image: Optional[str]
     
     # Tenant info
@@ -201,7 +201,7 @@ async def list_users(
     if user_ids:
         placeholders = ", ".join([f":id{i}" for i in range(len(user_ids))])
         auth_users_query = text(f"""
-            SELECT id, email, name, "emailVerified", image, "createdAt"
+            SELECT id, email, name, image, "createdAt"
             FROM "user"
             WHERE id IN ({placeholders})
         """)
@@ -211,7 +211,7 @@ async def list_users(
             auth_users = {row[0]: row for row in auth_result.all()}
         except Exception:
             # Better Auth table doesn't exist - use placeholder data
-            auth_users = {uid: (uid, f"user_{uid[:8]}@example.com", "User", False, None, None) for uid in user_ids}
+            auth_users = {uid: (uid, f"user_{uid[:8]}@example.com", "User", None, None) for uid in user_ids}
     else:
         auth_users = {}
     
@@ -279,7 +279,7 @@ async def get_user(
     
     # Get Better Auth user info
     auth_user_query = text("""
-        SELECT id, email, name, "emailVerified", image
+        SELECT id, email, name, image
         FROM "user"
         WHERE id = :user_id
     """)
@@ -288,7 +288,7 @@ async def get_user(
         auth_user = auth_result.first()
     except Exception:
         # Better Auth table doesn't exist - use placeholder
-        auth_user = (user_id, f"user_{user_id[:8]}@example.com", "User", False, None)
+        auth_user = (user_id, f"user_{user_id[:8]}@example.com", "User", None)
     
     if not auth_user:
         raise HTTPException(
@@ -300,8 +300,7 @@ async def get_user(
         id=tenant_user.id,
         email=auth_user[1],
         name=auth_user[2],
-        email_verified=auth_user[3] or False,
-        image=auth_user[4],
+        image=auth_user[3],
         tenant_id=tenant_user.tenant_id,
         tenant_name=tenant.name,
         tenant_slug=tenant.slug,
@@ -386,8 +385,8 @@ async def create_user(
     # Create user in Better Auth table
     try:
         create_user_query = text('''
-            INSERT INTO "user" (id, email, email_verified, name, image, "createdAt", "updatedAt")
-            VALUES (:id, :email, false, :name, NULL, NOW(), NOW())
+            INSERT INTO "user" (id, email, name, image, "createdAt", "updatedAt")
+            VALUES (:id, :email, :name, NULL, NOW(), NOW())
         ''')
         await db.execute(create_user_query, {
             "id": user_id,
@@ -433,7 +432,6 @@ async def create_user(
         id=user_id,
         email=user_data.email,
         name=user_data.name or user_data.email.split('@')[0],
-        email_verified=False,
         image=None,
         tenant_id=tenant.id,
         tenant_name=tenant.name,
@@ -497,6 +495,27 @@ async def update_user(
             detail="You can only update users in your own tenant"
         )
     
+    # Validate tenant change (only superadmins)
+    if user_update.tenant_id is not None:
+        if current_role != "superadmin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only superadmins can change user tenant"
+            )
+        
+        # Verify new tenant exists
+        tenant_result = await db.execute(
+            select(Tenant).where(Tenant.id == user_update.tenant_id)
+        )
+        new_tenant = tenant_result.scalar_one_or_none()
+        if not new_tenant:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tenant not found"
+            )
+        
+        tenant_user.tenant_id = user_update.tenant_id
+    
     # Validate role change if provided
     if user_update.role:
         validate_role_creation(current_role, user_update.role)
@@ -505,48 +524,56 @@ async def update_user(
     # Update TenantUser fields
     if user_update.all_locations_access is not None:
         tenant_user.all_locations_access = user_update.all_locations_access
-    try:
-        update_name_query = text("""
-            UPDATE "user" 
-            SET name = :name, "updatedAt" = NOW()
-            WHERE id = :user_id
-        """)
-        await db.execute(update_name_query, {"name": user_update.name, "user_id": user_id})
-    except Exception:
-        # Better Auth table doesn't exist - skip update
-        pass
-    update_name_query = text("""
-        UPDATE "user" 
-        SET name = :name, "updatedAt" = NOW()
-        WHERE id = :user_id
-    """)
-    await db.execute(update_name_query, {"name": user_update.name, "user_id": user_id})
+    
+    # Update name in Better Auth user table if name provided
+    if user_update.name:
+        try:
+            update_name_query = text("""
+                UPDATE "user" 
+                SET name = :name, "updatedAt" = NOW()
+                WHERE id = :user_id
+            """)
+            await db.execute(update_name_query, {"name": user_update.name, "user_id": user_id})
+        except Exception:
+            # Better Auth table doesn't exist - skip update
+            pass
     
     await db.commit()
     await db.refresh(tenant_user)
     
+    # Get updated tenant info (in case it was changed)
+    tenant_result = await db.execute(
+        select(Tenant).where(Tenant.id == tenant_user.tenant_id)
+    )
+    updated_tenant = tenant_result.scalar_one()
+    
     # Get updated user info
     auth_user_query = text("""
+        SELECT id, email, name, image
+        FROM "user"
+        WHERE id = :user_id
+    """)
     try:
         auth_result = await db.execute(auth_user_query, {"user_id": user_id})
         auth_user = auth_result.first()
     except Exception:
         # Better Auth table doesn't exist - use placeholder
-        auth_user = (user_id, f"user_{user_id[:8]}@example.com", user_update.name or "User", False, None
-        WHERE id = :user_id
-    """)
-    auth_result = await db.execute(auth_user_query, {"user_id": user_id})
-    auth_user = auth_result.first()
+        auth_user = (user_id, f"user_{user_id[:8]}@example.com", user_update.name or "User", None)
+    
+    if not auth_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User authentication data not found"
+        )
     
     return UserDetailResponse(
         id=tenant_user.id,
         email=auth_user[1],
         name=auth_user[2],
-        email_verified=auth_user[3] or False,
-        image=auth_user[4],
+        image=auth_user[3],
         tenant_id=tenant_user.tenant_id,
-        tenant_name=tenant.name,
-        tenant_slug=tenant.slug,
+        tenant_name=updated_tenant.name,
+        tenant_slug=updated_tenant.slug,
         role=tenant_user.role,
         all_locations_access=tenant_user.all_locations_access,
         is_active=tenant_user.is_active,

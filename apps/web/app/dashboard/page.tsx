@@ -298,7 +298,7 @@ export default function DashboardPage() {
               </CardDescription>
             </div>
             <Select value={timeRange} onValueChange={setTimeRange}>
-              <SelectTrigger className="w-[120px]">
+              <SelectTrigger className="w-30">
                 <SelectValue placeholder="Período" />
               </SelectTrigger>
               <SelectContent>
@@ -309,7 +309,7 @@ export default function DashboardPage() {
             </Select>
           </CardHeader>
           <CardContent className="pt-4">
-            <ChartContainer config={chartConfig} className="h-[300px] w-full">
+            <ChartContainer config={chartConfig} className="h-75 w-full">
               <AreaChart
                 data={activityData}
                 margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
@@ -380,7 +380,7 @@ export default function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-4">
-            <ChartContainer config={chartConfig} className="h-[300px] w-full">
+            <ChartContainer config={chartConfig} className="h-75 w-full">
               <BarChart
                 data={hourlyData}
                 margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
@@ -428,7 +428,7 @@ export default function DashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-4">
-            <ChartContainer config={chartConfig} className="h-[200px] w-full">
+            <ChartContainer config={chartConfig} className="h-50 w-full">
               <AreaChart
                 data={activityData}
                 margin={{ top: 10, right: 10, left: 0, bottom: 0 }}

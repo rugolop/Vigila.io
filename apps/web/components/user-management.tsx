@@ -122,6 +122,7 @@ export function UserManagementComponent() {
   const [formData, setFormData] = useState({
     name: "",
     role: "viewer" as "admin" | "operator" | "viewer" | "superadmin",
+    tenant_id: 0,
     all_locations_access: false,
     is_active: true,
   })
@@ -252,6 +253,7 @@ export function UserManagementComponent() {
     setFormData({
       name: user.name || "",
       role: user.role,
+      tenant_id: user.tenant_id,
       all_locations_access: false, // Will be loaded from detail
       is_active: user.is_active,
     })
@@ -345,7 +347,7 @@ export function UserManagementComponent() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 mx-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -365,7 +367,7 @@ export function UserManagementComponent() {
               value={selectedTenant?.toString() || "all"}
               onValueChange={(value) => setSelectedTenant(value === "all" ? null : Number(value))}
             >
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-50">
                 <SelectValue placeholder="Todos los tenants" />
               </SelectTrigger>
               <SelectContent>
@@ -396,7 +398,7 @@ export function UserManagementComponent() {
               <TableHead>Rol</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Creado</TableHead>
-              <TableHead className="w-[50px]"></TableHead>
+              <TableHead className="w-12.5"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -503,6 +505,30 @@ export function UserManagementComponent() {
                 placeholder="Nombre del usuario"
               />
             </div>
+
+            {isSuperAdmin && (
+              <div className="space-y-2">
+                <Label htmlFor="tenant">Tenant</Label>
+                <Select
+                  value={formData.tenant_id.toString()}
+                  onValueChange={(value) => setFormData({ ...formData, tenant_id: parseInt(value) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tenants.map((tenant) => (
+                      <SelectItem key={tenant.id} value={tenant.id.toString()}>
+                        {tenant.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  Cambiar el tenant moverá al usuario a otra organización
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="role">Rol</Label>
