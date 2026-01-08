@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "./ui/card"
 import { RefreshCw, Video, VideoOff } from "lucide-react"
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+
 interface Camera {
   id: number
   name: string
@@ -21,7 +23,7 @@ export const LiveViewGrid = () => {
   const fetchCameras = async () => {
     setLoading(true)
     try {
-      const response = await fetch("http://localhost:8001/api/cameras/")
+      const response = await fetch(`${API_URL}/api/cameras/`)
       if (response.ok) {
         const data = await response.json()
         setCameras(data)

@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 import {
   Table,
   TableBody,
@@ -102,7 +104,7 @@ export const RecordingsGallery = () => {
   // Fetch cameras with recordings
   const fetchCameras = async () => {
     try {
-      const response = await fetch("http://localhost:8001/api/recordings/cameras-with-recordings")
+      const response = await fetch(`${API_URL}/api/recordings/cameras-with-recordings`)
       if (response.ok) {
         const data = await response.json()
         setCameras(data)
@@ -134,7 +136,7 @@ export const RecordingsGallery = () => {
         params.end_time = endTime
       }
 
-      const response = await fetch("http://localhost:8001/api/recordings/search", {
+      const response = await fetch(`${API_URL}/api/recordings/search`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(params),
@@ -194,7 +196,7 @@ export const RecordingsGallery = () => {
     
     setDeleting(true)
     try {
-      const response = await fetch(`http://localhost:8001/api/recordings/${encodeURIComponent(id)}`, {
+      const response = await fetch(`${API_URL}/api/recordings/${encodeURIComponent(id)}`, {
         method: "DELETE",
       })
       if (response.ok) {
@@ -219,7 +221,7 @@ export const RecordingsGallery = () => {
 
     setDeleting(true)
     try {
-      const response = await fetch("http://localhost:8001/api/recordings/delete-bulk", {
+      const response = await fetch(`${API_URL}/api/recordings/delete-bulk`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(Array.from(selectedRecordings)),
@@ -246,7 +248,7 @@ export const RecordingsGallery = () => {
 
   // Download recording as zip
   const downloadRecording = async (recording: Recording) => {
-    const url = `http://localhost:8001/api/recordings/download/${recording.folder_name}/${recording.filename}`
+    const url = `${API_URL}/api/recordings/download/${recording.folder_name}/${recording.filename}`
     const filename = recording.filename.replace(".mp4", ".zip")
     try {
       await downloadWithProgress(url, undefined, filename, 1)
@@ -259,7 +261,7 @@ export const RecordingsGallery = () => {
   const bulkDownload = async () => {
     if (selectedRecordings.size === 0) return
     
-    const url = "http://localhost:8001/api/recordings/download-bulk"
+    const url = `${API_URL}/api/recordings/download-bulk`
     const options: RequestInit = {
       method: "POST",
       headers: { "Content-Type": "application/json" },

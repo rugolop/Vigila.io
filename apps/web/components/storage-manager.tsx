@@ -48,6 +48,8 @@ import {
   Settings,
   Clock,
   AlertTriangle,
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
   Loader2,
 } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
@@ -191,7 +193,7 @@ export function StorageManager() {
   
   const fetchOverview = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:8001/storage/overview")
+      const response = await fetch(`${API_URL}/storage/overview`)
       if (response.ok) {
         const data = await response.json()
         setOverview(data)
@@ -205,7 +207,7 @@ export function StorageManager() {
   
   const fetchStorageTypes = useCallback(async () => {
     try {
-      const response = await fetch("http://localhost:8001/storage/types/info")
+      const response = await fetch(`${API_URL}/storage/types/info`)
       if (response.ok) {
         const data = await response.json()
         setStorageTypes(data.types)
@@ -223,7 +225,7 @@ export function StorageManager() {
   // Fetch retention analysis for a volume
   const fetchRetentionAnalysis = async (volumeId: number) => {
     try {
-      const response = await fetch(`http://localhost:8001/storage/${volumeId}/retention/analysis`)
+      const response = await fetch(`${API_URL}/storage/${volumeId}/retention/analysis`)
       if (response.ok) {
         const data = await response.json()
         setRetentionAnalysis(prev => ({ ...prev, [volumeId]: data }))
@@ -236,7 +238,7 @@ export function StorageManager() {
   // Fetch cleanup status
   const fetchCleanupStatus = async () => {
     try {
-      const response = await fetch("http://localhost:8001/storage/cleanup/status")
+      const response = await fetch(`${API_URL}/storage/cleanup/status`)
       if (response.ok) {
         const data = await response.json()
         setCleanupStatus(data)
@@ -250,7 +252,7 @@ export function StorageManager() {
   const handleUpdateRetention = async (volumeId: number, retentionDays: number, autoAdjust: boolean = true) => {
     setUpdatingRetention(volumeId)
     try {
-      const response = await fetch(`http://localhost:8001/storage/${volumeId}/retention`, {
+      const response = await fetch(`${API_URL}/storage/${volumeId}/retention`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ retention_days: retentionDays, auto_adjust: autoAdjust }),
@@ -275,7 +277,7 @@ export function StorageManager() {
     }
     setRunningCleanup(true)
     try {
-      const response = await fetch(`http://localhost:8001/storage/${volumeId}/cleanup`, {
+      const response = await fetch(`${API_URL}/storage/${volumeId}/cleanup`, {
         method: "POST",
       })
       if (response.ok) {
@@ -314,7 +316,7 @@ export function StorageManager() {
   const handleCheckVolume = async (volumeId: number) => {
     setCheckingId(volumeId)
     try {
-      await fetch(`http://localhost:8001/storage/${volumeId}/check`, {
+      await fetch(`${API_URL}/storage/${volumeId}/check`, {
         method: "POST",
       })
       await fetchOverview()
@@ -327,7 +329,7 @@ export function StorageManager() {
   
   const handleSetPrimary = async (volumeId: number) => {
     try {
-      await fetch(`http://localhost:8001/storage/${volumeId}/set-primary`, {
+      await fetch(`${API_URL}/storage/${volumeId}/set-primary`, {
         method: "POST",
       })
       await fetchOverview()
@@ -341,7 +343,7 @@ export function StorageManager() {
       return
     }
     try {
-      const response = await fetch(`http://localhost:8001/storage/${volumeId}`, {
+      const response = await fetch(`${API_URL}/storage/${volumeId}`, {
         method: "DELETE",
       })
       if (response.ok) {
@@ -386,7 +388,7 @@ export function StorageManager() {
         payload.password = formData.password // secret key
       }
       
-      const response = await fetch("http://localhost:8001/storage/", {
+      const response = await fetch(`${API_URL}/storage/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
