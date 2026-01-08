@@ -1,4 +1,4 @@
-name: 🚀 Build and Push to Docker Hub
+name: 🚀 Build and Push to GHCR
 
 on:
   push:
@@ -6,9 +6,15 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: docker.io
-  WEB_IMAGE: rugolop/vigila-web
-  BACKEND_IMAGE: rugolop/vigila-backend
+  # GitHub Container Registry (sin rate limits)
+  REGISTRY: ghcr.io
+  WEB_IMAGE: ghcr.io/rugolop/vigila-web
+  BACKEND_IMAGE: ghcr.io/rugolop/vigila-backend
+  
+  # Docker Hub (comentado - alcanzado rate limit)
+  # REGISTRY: docker.io
+  # WEB_IMAGE: rugolop/vigila-web
+  # BACKEND_IMAGE: rugolop/vigila-backend
 
 jobs:
   build-and-push:
@@ -19,11 +25,20 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      - name: 🔑 Login to Docker Hub
+      # Login a GitHub Container Registry (sin rate limits, usa GITHUB_TOKEN automático)
+      - name: 🔑 Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Login a Docker Hub (comentado - usar solo si vuelves a Docker Hub)
+      # - name: 🔑 Login to Docker Hub
+      #   uses: docker/login-action@v3
+      #   with:
+      #     username: ${{ secrets.DOCKER_USERNAME }}
+      #     password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: 🏗️ Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

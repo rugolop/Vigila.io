@@ -11,7 +11,10 @@ version: '3.8'
 
 services:
   web:
-    image: rugolop/vigila-web:${TAG:-latest}
+    # GitHub Container Registry
+    image: ghcr.io/rugolop/vigila-web:${TAG:-latest}
+    # Docker Hub (comentado)
+    # image: rugolop/vigila-web:${TAG:-latest}
     environment:
       - NODE_ENV=production
       # NEXT_PUBLIC_API_URL is baked at build time in GitHub Actions
@@ -42,7 +45,10 @@ services:
       - dokploy-network
 
   backend:
-    image: rugolop/vigila-backend:${TAG:-latest}
+    # GitHub Container Registry
+    image: ghcr.io/rugolop/vigila-backend:${TAG:-latest}
+    # Docker Hub (comentado)
+    # image: rugolop/vigila-backend:${TAG:-latest}
     ports:
       - "8001:8001"
     environment:
@@ -113,8 +119,12 @@ services:
     environment:
       - SLEEP_TIME=5m
       - FILTER_SERVICES=label=com.docker.stack.namespace=vigilaio-vigila-o5ec3m
-      - REGISTRY_USER=${DOCKER_USERNAME:-}
-      - REGISTRY_PASSWORD=${DOCKER_PASSWORD:-}
+      # GitHub Container Registry (ghcr.io) - autenticación requerida
+      - REGISTRY_USER=${GITHUB_USERNAME:-rugolop}
+      - REGISTRY_PASSWORD=${GITHUB_TOKEN:-}
+      # Docker Hub (comentado - volver si cambias a Docker Hub)
+      # - REGISTRY_USER=${DOCKER_USERNAME:-}
+      # - REGISTRY_PASSWORD=${DOCKER_PASSWORD:-}
     deploy:
       replicas: 1
       placement:
