@@ -1,0 +1,36 @@
+name: 🧪 Test SSH Connection
+
+on:
+  workflow_dispatch:  # Solo ejecución manual
+
+jobs:
+  test-ssh:
+    name: 🔌 Test SSH Connection
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📋 Show connection info (masked)
+        run: |
+          echo "Testing SSH connection to Dokploy server..."
+          echo "Host: ${{ secrets.DOKPLOY_HOST }}"
+          echo "User: ${{ secrets.DOKPLOY_USER }}"
+          echo "Port: 22"
+      
+      - name: 🔑 Test SSH Connection
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DOKPLOY_HOST }}
+          username: ${{ secrets.DOKPLOY_USER }}
+          key: ${{ secrets.DOKPLOY_SSH_KEY }}
+          port: 22
+          script: |
+            echo "✅ SSH Connection successful!"
+            echo "Hostname: $(hostname)"
+            echo "User: $(whoami)"
+            echo "Docker version: $(docker --version)"
+            echo ""
+            echo "📋 Docker services:"
+            docker service ls
+            echo ""
+            echo "🎯 Vigila services:"
+            docker service ls | grep vigila || echo "No vigila services found"
