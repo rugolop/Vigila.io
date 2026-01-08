@@ -97,6 +97,7 @@ export default function AgentsPage() {
   const [showDownloadDialog, setShowDownloadDialog] = useState(false)
   const [agentName, setAgentName] = useState("vigila-agent")
   const [downloading, setDownloading] = useState(false)
+  const [downloadTenantId, setDownloadTenantId] = useState<string>("")
 
   // Fetch agents
   const fetchAgents = useCallback(async () => {
@@ -189,8 +190,9 @@ export default function AgentsPage() {
 
   // Download agent package
   const downloadAgent = async () => {
-    const targetTenantId = isSuperAdmin && selectedTenant !== "all" 
-      ? parseInt(selectedTenant) 
+    // Para super admin, usar downloadTenantId; para admin normal, usar su tenantId
+    const targetTenantId = isSuperAdmin 
+      ? (downloadTenantId ? parseInt(downloadTenantId) : null)
       : tenantId
     
     if (!targetTenantId) {
@@ -227,6 +229,7 @@ export default function AgentsPage() {
       
       setShowDownloadDialog(false)
       setAgentName("vigila-agent")
+      setDownloadTenantId("")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido")
     } finally {
@@ -618,8 +621,8 @@ export default function AgentsPage() {
             <div className="space-y-4">
               {isSuperAdmin && tenants.length > 0 && (
                 <div className="space-y-2">
-                  <Label htmlFor="download-tenant">Tenant</Label>
-                  <Select value={selectedTenant} onValueChange={setSelectedTenant}>
+                  <Label htmlFor="download-tenant">Tenant *</Label>
+                  <Select value={downloadTenantId} onValueChange={setDownloadTenantId}>
                     <SelectTrigger id="download-tenant">
                       <SelectValue placeholder="Selecciona un tenant" />
                     </SelectTrigger>
@@ -631,6 +634,9 @@ export default function AgentsPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Selecciona el tenant para el cual deseas generar el agente
+                  </p>
                 </div>
               )}
               <div className="space-y-2">
@@ -664,12 +670,15 @@ export default function AgentsPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowDownloadDialog(false)}>
+              <Button variant="outline" onClick={() => {
+                setShowDownloadDialog(false)
+                setDownloadTenantId("")
+              }}>
                 Cancelar
               </Button>
               <Button 
                 onClick={downloadAgent} 
-                disabled={downloading || (isSuperAdmin && selectedTenant === "all")}
+                disabled={downloading || (isSuperAdmin && !downloadTenantId)}
               >
                 {downloading ? (
                   <>
