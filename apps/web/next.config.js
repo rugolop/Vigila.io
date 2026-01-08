@@ -7,9 +7,9 @@ const nextConfig = {
   // Output standalone para Docker
   output: 'standalone',
   
-  // Variables de entorno públicas
+  // Variables de entorno públicas - hardcoded para debug
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://api.vigila.itcore.es',
   },
 };
 
