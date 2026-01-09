@@ -237,11 +237,8 @@ async def agent_heartbeat(
     # Update last seen and stats in database
     agent.last_seen = datetime.utcnow()
     agent.cameras_count = request.cameras_count
-    # relay_status comes as dict from agent, convert to string for DB storage
-    if isinstance(request.relay_status, dict):
-        agent.relay_status = json.dumps(request.relay_status)
-    else:
-        agent.relay_status = str(request.relay_status)
+    # relay_status comes as dict from agent, always convert to JSON string for DB storage
+    agent.relay_status = json.dumps(request.relay_status) if request.relay_status else "{}"
     
     await db.commit()
     
