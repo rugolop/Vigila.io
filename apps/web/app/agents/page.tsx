@@ -88,9 +88,6 @@ export default function AgentsPage() {
   const [error, setError] = useState<string | null>(null)
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [selectedTenant, setSelectedTenant] = useState<string>("all")
-  const [showTokenDialog, setShowTokenDialog] = useState(false)
-  const [generatedToken, setGeneratedToken] = useState("")
-  const [tokenCopied, setTokenCopied] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
   const [discoveredCameras, setDiscoveredCameras] = useState<DiscoveredCamera[]>([])
   const [loadingCameras, setLoadingCameras] = useState(false)
@@ -130,34 +127,18 @@ export default function AgentsPage() {
 
   // Fetch tenants for super admin
   const fetchTenants = useCallback(async () => {
-    // DEBUG: Log para diagnóstico en producción
-    console.log("[DEBUG fetchTenants] isSuperAdmin:", isSuperAdmin, "tenantId:", tenantId)
-    
-    if (!isSuperAdmin) {
-      console.log("[DEBUG fetchTenants] Skipping - not super admin")
-      return
-    }
+    if (!isSuperAdmin) return
     
     try {
-      const url = `${API_URL}/api/tenants`
-      console.log("[DEBUG fetchTenants] Fetching from:", url)
-      
-      const response = await fetch(url)
-      console.log("[DEBUG fetchTenants] Response status:", response.status, response.statusText)
-      console.log("[DEBUG fetchTenants] Response headers:", Object.fromEntries(response.headers.entries()))
-      
+      const response = await fetch(`${API_URL}/api/tenants`)
       if (response.ok) {
         const data = await response.json()
-        console.log("[DEBUG fetchTenants] Data received:", data)
         setTenants(data || [])
-      } else {
-        const errorText = await response.text()
-        console.error("[DEBUG fetchTenants] Error response:", errorText)
       }
     } catch (err) {
-      console.error("[DEBUG fetchTenants] Exception:", err)
+      console.error("Error fetching tenants:", err)
     }
-  }, [isSuperAdmin, tenantId])
+  }, [isSuperAdmin])
 
   useEffect(() => {
     if (!tenantLoading) {
@@ -171,38 +152,6 @@ export default function AgentsPage() {
     const interval = setInterval(fetchAgents, 30000)
     return () => clearInterval(interval)
   }, [fetchAgents])
-
-  // Generate token for new agent
-  const generateToken = () => {
-    const targetTenantId = isSuperAdmin && selectedTenant !== "all" 
-      ? selectedTenant 
-      : tenantId
-    
-    if (!targetTenantId) {
-      setError("Selecciona un tenant primero")
-      return
-    }
-    
-    // Generate a simple token: tenant_id:random_secret
-    const secret = Math.random().toString(36).substring(2, 15) + 
-                   Math.random().toString(36).substring(2, 15)
-    const token = `${targetTenantId}:${secret}`
-    
-    setGeneratedToken(token)
-    setShowTokenDialog(true)
-    setTokenCopied(false)
-  }
-
-  // Copy token to clipboard
-  const copyToken = async () => {
-    try {
-      await navigator.clipboard.writeText(generatedToken)
-      setTokenCopied(true)
-      setTimeout(() => setTokenCopied(false), 2000)
-    } catch (err) {
-      console.error("Error copying:", err)
-    }
-  }
 
   // Download agent package
   const downloadAgent = async () => {
@@ -423,11 +372,11 @@ export default function AgentsPage() {
                 <Server className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium mb-2">No hay agentes registrados</h3>
                 <p className="text-muted-foreground mb-4">
-                  Genera un token e instala el agente en tu red local
+                  Descarga e instala el agente en tu red local para conectar cámaras
                 </p>
-                <Button onClick={generateToken}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Crear Primer Agente
+                <Button onClick={() => setShowDownloadDialog(true)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Descargar Primer Agente
                 </Button>
               </div>
             ) : (
@@ -516,47 +465,6 @@ export default function AgentsPage() {
           </CardContent>
         </Card>
 
-        {/* Token Generation Dialog */}
-        <Dialog open={showTokenDialog} onOpenChange={setShowTokenDialog}>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Token de Agente Generado</DialogTitle>
-              <DialogDescription>
-                Usa este token al configurar el agente en tu red local. 
-                Guárdalo en un lugar seguro, no se mostrará de nuevo.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Input 
-                  value={generatedToken} 
-                  readOnly 
-                  className="font-mono text-sm"
-                />
-                <Button variant="outline" size="icon" onClick={copyToken}>
-                  {tokenCopied ? (
-                    <Check className="h-4 w-4 text-green-500" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-              <div className="bg-muted p-4 rounded-lg text-sm">
-                <p className="font-medium mb-2">Instrucciones de instalación:</p>
-                <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-                  <li>Descarga el agente de Vigila.io</li>
-                  <li>Crea un archivo <code className="bg-background px-1">.env</code></li>
-                  <li>Añade: <code className="bg-background px-1">AGENT_TOKEN={generatedToken}</code></li>
-                  <li>Ejecuta: <code className="bg-background px-1">python agent.py</code></li>
-                </ol>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={() => setShowTokenDialog(false)}>Cerrar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
         {/* Discovered Cameras Dialog */}
         <Dialog open={!!selectedAgent} onOpenChange={() => setSelectedAgent(null)}>
           <DialogContent className="sm:max-w-[700px]">
@@ -626,7 +534,7 @@ export default function AgentsPage() {
 
         {/* Download Agent Dialog */}
         <Dialog open={showDownloadDialog} onOpenChange={setShowDownloadDialog}>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="sm:max-w-150">
             <DialogHeader>
               <DialogTitle>Descargar Agente Local</DialogTitle>
               <DialogDescription>
@@ -634,16 +542,7 @@ export default function AgentsPage() {
                 El token se genera automáticamente.
               </DialogDescription>
             </DialogHeader>
-            {/* DEBUG: Mostrar valores para diagnóstico */}
-            <div className="bg-yellow-100 dark:bg-yellow-900 p-2 rounded text-xs mb-2">
-              <p><strong>DEBUG:</strong></p>
-              <p>isSuperAdmin: {String(isSuperAdmin)}</p>
-              <p>tenants.length: {tenants.length}</p>
-              <p>tenants: {JSON.stringify(tenants.map(t => ({id: t.id, name: t.name})))}</p>
-              <p>tenantId (from useTenant): {tenantId}</p>
-              <p>Condition (isSuperAdmin &amp;&amp; tenants.length &gt; 0): {String(isSuperAdmin && tenants.length > 0)}</p>
-            </div>
-            <div className="space-y-4">
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto">
               {isSuperAdmin && tenants.length > 0 && (
                 <div className="space-y-2">
                   <Label htmlFor="download-tenant">Tenant *</Label>
@@ -676,20 +575,40 @@ export default function AgentsPage() {
                   Este nombre identificará al agente en el dashboard
                 </p>
               </div>
+              
+              {/* Contenido del paquete */}
               <div className="bg-muted p-4 rounded-lg text-sm">
-                <p className="font-medium mb-2">El paquete incluye:</p>
+                <p className="font-medium mb-2">📦 El paquete incluye:</p>
                 <ul className="list-disc list-inside space-y-1 text-muted-foreground">
                   <li>Scripts del agente (Python)</li>
                   <li>Archivo .env pre-configurado con tu token</li>
-                  <li>README con instrucciones de instalación</li>
-                  <li>requirements.txt con dependencias</li>
+                  <li>Scripts de instalación automática (Linux/Windows)</li>
+                  <li>README con instrucciones detalladas</li>
                 </ul>
               </div>
+              
+              {/* Pasos de instalación */}
+              <div className="bg-green-50 dark:bg-green-950 p-4 rounded-lg text-sm">
+                <p className="font-medium text-green-700 dark:text-green-300 mb-2">🚀 Instalación rápida:</p>
+                <div className="space-y-2 text-green-600 dark:text-green-400">
+                  <p className="font-medium">Linux/macOS:</p>
+                  <code className="block bg-green-100 dark:bg-green-900 p-2 rounded text-xs">
+                    unzip vigila-agent.zip && cd vigila-agent && chmod +x install.sh && ./install.sh
+                  </code>
+                  <p className="font-medium mt-3">Windows (PowerShell como Admin):</p>
+                  <code className="block bg-green-100 dark:bg-green-900 p-2 rounded text-xs">
+                    Expand-Archive vigila-agent.zip; cd vigila-agent; .\install.bat
+                  </code>
+                </div>
+              </div>
+              
+              {/* Requisitos */}
               <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg text-sm">
-                <p className="font-medium text-blue-700 dark:text-blue-300 mb-2">Requisitos:</p>
+                <p className="font-medium text-blue-700 dark:text-blue-300 mb-2">⚙️ Requisitos del sistema:</p>
                 <ul className="list-disc list-inside space-y-1 text-blue-600 dark:text-blue-400">
                   <li>Python 3.9 o superior</li>
-                  <li>FFmpeg instalado</li>
+                  <li>FFmpeg (se instala automáticamente en Linux)</li>
+                  <li>Conexión a Internet</li>
                   <li>Acceso a la red local de las cámaras</li>
                 </ul>
               </div>

@@ -1005,6 +1005,293 @@ wsdiscovery>=2.0.0
 onvif-zeep>=0.2.12
 psutil>=5.9.0
 ''',
+
+    "install.sh": '''#!/bin/bash
+#
+# Vigila.io Local Agent - Instalador para Linux/macOS
+# Este script configura automáticamente el agente
+#
+
+set -e
+
+echo "========================================"
+echo "  Vigila.io Agent - Instalador"
+echo "========================================"
+echo ""
+
+# Colores para output
+RED='\\033[0;31m'
+GREEN='\\033[0;32m'
+YELLOW='\\033[1;33m'
+NC='\\033[0m' # No Color
+
+# Detectar sistema operativo
+OS="$(uname -s)"
+case "${OS}" in
+    Linux*)     MACHINE=Linux;;
+    Darwin*)    MACHINE=Mac;;
+    *)          MACHINE="UNKNOWN"
+esac
+
+echo "Sistema detectado: $MACHINE"
+echo ""
+
+# Verificar Python
+echo "Verificando Python..."
+if command -v python3 &> /dev/null; then
+    PYTHON=python3
+    PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+    echo -e "${GREEN}✓ Python $PYTHON_VERSION encontrado${NC}"
+else
+    echo -e "${RED}✗ Python 3 no encontrado${NC}"
+    echo "Por favor instala Python 3.9 o superior:"
+    if [ "$MACHINE" = "Mac" ]; then
+        echo "  brew install python3"
+    else
+        echo "  sudo apt install python3 python3-pip python3-venv"
+    fi
+    exit 1
+fi
+
+# Verificar versión de Python >= 3.9
+PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
+PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
+if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 9 ]); then
+    echo -e "${RED}✗ Se requiere Python 3.9 o superior (tienes $PYTHON_VERSION)${NC}"
+    exit 1
+fi
+
+# Instalar FFmpeg si no está
+echo ""
+echo "Verificando FFmpeg..."
+if command -v ffmpeg &> /dev/null; then
+    FFMPEG_VERSION=$(ffmpeg -version 2>&1 | head -n1 | awk '{print $3}')
+    echo -e "${GREEN}✓ FFmpeg $FFMPEG_VERSION encontrado${NC}"
+else
+    echo -e "${YELLOW}FFmpeg no encontrado, instalando...${NC}"
+    if [ "$MACHINE" = "Mac" ]; then
+        if command -v brew &> /dev/null; then
+            brew install ffmpeg
+        else
+            echo -e "${RED}Homebrew no encontrado. Instala FFmpeg manualmente.${NC}"
+            exit 1
+        fi
+    else
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y ffmpeg
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y ffmpeg
+        elif command -v pacman &> /dev/null; then
+            sudo pacman -S ffmpeg
+        else
+            echo -e "${RED}No se pudo instalar FFmpeg automáticamente.${NC}"
+            exit 1
+        fi
+    fi
+    echo -e "${GREEN}✓ FFmpeg instalado${NC}"
+fi
+
+# Crear entorno virtual
+echo ""
+echo "Creando entorno virtual..."
+if [ -d "venv" ]; then
+    echo -e "${YELLOW}Entorno virtual existente encontrado, usando...${NC}"
+else
+    $PYTHON -m venv venv
+    echo -e "${GREEN}✓ Entorno virtual creado${NC}"
+fi
+
+# Activar entorno virtual
+source venv/bin/activate
+
+# Instalar dependencias
+echo ""
+echo "Instalando dependencias..."
+pip install --upgrade pip > /dev/null 2>&1
+pip install -r requirements.txt
+echo -e "${GREEN}✓ Dependencias instaladas${NC}"
+
+# Verificar archivo .env
+echo ""
+if [ -f ".env" ]; then
+    echo -e "${GREEN}✓ Archivo .env encontrado${NC}"
+else
+    echo -e "${RED}✗ Archivo .env no encontrado${NC}"
+    exit 1
+fi
+
+# Preguntar si crear servicio systemd
+echo ""
+echo "========================================"
+echo "  Configuración del Servicio"
+echo "========================================"
+echo ""
+
+if [ "$MACHINE" = "Linux" ] && command -v systemctl &> /dev/null; then
+    read -p "¿Deseas instalar el agente como servicio systemd? (s/n): " INSTALL_SERVICE
+    if [ "$INSTALL_SERVICE" = "s" ] || [ "$INSTALL_SERVICE" = "S" ]; then
+        CURRENT_DIR=$(pwd)
+        CURRENT_USER=$(whoami)
+        
+        # Crear archivo de servicio
+        sudo tee /etc/systemd/system/vigila-agent.service > /dev/null << EOF
+[Unit]
+Description=Vigila.io Local Agent
+After=network.target
+
+[Service]
+Type=simple
+User=$CURRENT_USER
+WorkingDirectory=$CURRENT_DIR
+ExecStart=$CURRENT_DIR/venv/bin/python agent.py
+Restart=always
+RestartSec=10
+Environment=PATH=$CURRENT_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        
+        # Habilitar e iniciar servicio
+        sudo systemctl daemon-reload
+        sudo systemctl enable vigila-agent
+        sudo systemctl start vigila-agent
+        
+        echo -e "${GREEN}✓ Servicio instalado y ejecutándose${NC}"
+        echo ""
+        echo "Comandos útiles:"
+        echo "  sudo systemctl status vigila-agent   # Ver estado"
+        echo "  sudo systemctl restart vigila-agent  # Reiniciar"
+        echo "  sudo journalctl -u vigila-agent -f   # Ver logs"
+    else
+        echo ""
+        echo "Para ejecutar manualmente:"
+        echo "  source venv/bin/activate"
+        echo "  python agent.py"
+    fi
+else
+    echo "Para ejecutar manualmente:"
+    echo "  source venv/bin/activate"
+    echo "  python agent.py"
+fi
+
+echo ""
+echo "========================================"
+echo -e "${GREEN}  ¡Instalación completada!${NC}"
+echo "========================================"
+echo ""
+''',
+
+    "install.bat": '''@echo off
+REM
+REM Vigila.io Local Agent - Instalador para Windows
+REM Este script configura automaticamente el agente
+REM
+
+echo ========================================
+echo   Vigila.io Agent - Instalador Windows
+echo ========================================
+echo.
+
+REM Verificar Python
+echo Verificando Python...
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python no encontrado
+    echo Por favor instala Python 3.9 o superior desde https://python.org
+    echo Asegurate de marcar "Add Python to PATH" durante la instalacion
+    pause
+    exit /b 1
+)
+python --version
+echo [OK] Python encontrado
+echo.
+
+REM Verificar FFmpeg
+echo Verificando FFmpeg...
+ffmpeg -version >nul 2>&1
+if errorlevel 1 (
+    echo [ADVERTENCIA] FFmpeg no encontrado
+    echo.
+    echo Para instalar FFmpeg:
+    echo   1. Descarga desde https://ffmpeg.org/download.html
+    echo   2. Extrae y agrega la carpeta bin a tu PATH
+    echo   3. O usa: choco install ffmpeg (si tienes Chocolatey)
+    echo.
+    set /p CONTINUE="Deseas continuar sin FFmpeg? (s/n): "
+    if /i not "%CONTINUE%"=="s" exit /b 1
+) else (
+    echo [OK] FFmpeg encontrado
+)
+echo.
+
+REM Crear entorno virtual
+echo Creando entorno virtual...
+if exist venv (
+    echo Entorno virtual existente encontrado, usando...
+) else (
+    python -m venv venv
+    echo [OK] Entorno virtual creado
+)
+
+REM Activar entorno virtual
+call venv\\Scripts\\activate.bat
+
+REM Instalar dependencias
+echo.
+echo Instalando dependencias...
+pip install --upgrade pip >nul 2>&1
+pip install -r requirements.txt
+echo [OK] Dependencias instaladas
+echo.
+
+REM Verificar archivo .env
+if exist .env (
+    echo [OK] Archivo .env encontrado
+) else (
+    echo [ERROR] Archivo .env no encontrado
+    pause
+    exit /b 1
+)
+
+echo.
+echo ========================================
+echo   Configuracion del Servicio
+echo ========================================
+echo.
+
+set /p INSTALL_SERVICE="Deseas crear una tarea programada para iniciar con Windows? (s/n): "
+if /i "%INSTALL_SERVICE%"=="s" (
+    REM Crear script de inicio
+    echo @echo off > start_agent.bat
+    echo cd /d "%CD%" >> start_agent.bat
+    echo call venv\\Scripts\\activate.bat >> start_agent.bat
+    echo python agent.py >> start_agent.bat
+    
+    REM Crear tarea programada
+    schtasks /create /tn "VigilaAgent" /tr "\"%CD%\\start_agent.bat\"" /sc onlogon /rl highest /f >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] No se pudo crear la tarea programada
+        echo Ejecuta este script como Administrador
+    ) else (
+        echo [OK] Tarea programada creada
+        echo El agente se iniciara automaticamente al iniciar sesion
+    )
+)
+
+echo.
+echo ========================================
+echo   Para ejecutar el agente ahora:
+echo ========================================
+echo   venv\\Scripts\\activate
+echo   python agent.py
+echo.
+echo ========================================
+echo   Instalacion completada!
+echo ========================================
+echo.
+pause
+''',
 }
 
 
@@ -1067,78 +1354,121 @@ AGENT_NAME={request.agent_name}
     # Create README content
     readme_content = f'''# Vigila.io Local Agent
 
-Agent pre-configurado para: **{tenant.name}**
+Agente pre-configurado para: **{tenant.name}**
 
-## Requisitos
+## 🚀 Instalación Rápida
 
-- Python 3.9 o superior
-- FFmpeg instalado en el sistema:
-  - Windows: `choco install ffmpeg`
-  - macOS: `brew install ffmpeg`
-  - Linux: `apt install ffmpeg`
+### Linux / macOS
+```bash
+chmod +x install.sh
+./install.sh
+```
 
-## Instalación
+### Windows (PowerShell como Administrador)
+```powershell
+.\\install.bat
+```
 
-1. Instala las dependencias:
-   ```bash
-   pip install -r requirements.txt
-   ```
+El script de instalación:
+- ✅ Verifica que Python 3.9+ esté instalado
+- ✅ Instala FFmpeg si no está disponible (Linux/macOS)
+- ✅ Crea un entorno virtual de Python
+- ✅ Instala todas las dependencias
+- ✅ Opcionalmente configura el agente como servicio del sistema
 
-2. (Opcional) Edita `.env` para cambiar el nombre del agente o configurar el rango de red.
+---
 
-3. Ejecuta el agente:
-   ```bash
-   python agent.py
-   ```
+## 📋 Requisitos del Sistema
 
-## Qué hace el agente
+| Requisito | Versión Mínima | Notas |
+|-----------|----------------|-------|
+| Python | 3.9+ | [Descargar](https://python.org) |
+| FFmpeg | Cualquiera | Se instala automáticamente en Linux |
+| Red | - | Acceso a la red local de las cámaras |
 
-1. Se registra automáticamente con el servidor de Vigila.io
-2. Descubre cámaras en tu red local (ONVIF/WS-Discovery)
-3. Reporta las cámaras encontradas al servidor
-4. Espera comandos para relayar streams de cámaras específicas
+### Instalar FFmpeg manualmente:
+- **Windows**: `choco install ffmpeg` o [descargar](https://ffmpeg.org/download.html)
+- **macOS**: `brew install ffmpeg`
+- **Linux**: `sudo apt install ffmpeg`
 
-## Ejecución como servicio
+---
+
+## 🛠 Instalación Manual
+
+Si prefieres no usar el script de instalación:
+
+```bash
+# 1. Crear entorno virtual
+python3 -m venv venv
+
+# 2. Activar entorno virtual
+source venv/bin/activate  # Linux/macOS
+venv\\Scripts\\activate     # Windows
+
+# 3. Instalar dependencias
+pip install -r requirements.txt
+
+# 4. Ejecutar agente
+python agent.py
+```
+
+---
+
+## ⚙️ Configuración
+
+Edita el archivo `.env` para personalizar:
+
+| Variable | Descripción | Valor por defecto |
+|----------|-------------|-------------------|
+| `AGENT_NAME` | Nombre del agente en el dashboard | `{request.agent_name}` |
+| `NETWORK_RANGE` | Rango de red a escanear | Auto-detectado |
+| `HEARTBEAT_INTERVAL` | Intervalo de heartbeat (segundos) | 30 |
+| `LOG_LEVEL` | Nivel de logging | INFO |
+
+---
+
+## 🔧 Ejecutar como Servicio
 
 ### Linux (systemd)
 
-```bash
-sudo nano /etc/systemd/system/vigila-agent.service
-```
-
-```ini
-[Unit]
-Description=Vigila.io Local Agent
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/path/to/agent
-ExecStart=/usr/bin/python3 agent.py
-Restart=always
-User=yourusername
-
-[Install]
-WantedBy=multi-user.target
-```
+El script `install.sh` puede configurarlo automáticamente. Comandos útiles:
 
 ```bash
-sudo systemctl enable vigila-agent
-sudo systemctl start vigila-agent
+sudo systemctl status vigila-agent   # Ver estado
+sudo systemctl restart vigila-agent  # Reiniciar
+sudo systemctl stop vigila-agent     # Detener
+sudo journalctl -u vigila-agent -f   # Ver logs en tiempo real
 ```
 
 ### Windows
 
-Usa NSSM o Task Scheduler para ejecutar el agente al inicio.
-
-## Solución de problemas
-
-- **Error de conexión**: Verifica que `VIGILA_SERVER_URL` sea correcto
-- **FFmpeg no encontrado**: Instala FFmpeg y reinicia la terminal
-- **No se descubren cámaras**: Configura `NETWORK_RANGE` manualmente
+El script `install.bat` crea una tarea programada. También puedes:
+1. Usar NSSM: `nssm install VigilaAgent python.exe agent.py`
+2. Crear una tarea en el Programador de Tareas
 
 ---
-Generado por Vigila.io - {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")} UTC
+
+## 📡 Qué hace el agente
+
+1. **Registro**: Se conecta al servidor de Vigila.io y se registra
+2. **Descubrimiento**: Busca cámaras en tu red local (ONVIF/WS-Discovery)
+3. **Reporte**: Envía la lista de cámaras encontradas al servidor
+4. **Relay**: Retransmite streams de cámaras seleccionadas al servidor
+
+---
+
+## 🔍 Solución de Problemas
+
+| Problema | Solución |
+|----------|----------|
+| Error de conexión | Verifica `VIGILA_SERVER_URL` en `.env` |
+| FFmpeg no encontrado | Instala FFmpeg y reinicia la terminal |
+| No se descubren cámaras | Configura `NETWORK_RANGE` manualmente |
+| Agente se desconecta | Revisa los logs con `journalctl` o en consola |
+
+---
+
+*Generado por Vigila.io - {datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")} UTC*
 '''
 
     # Create ZIP file in memory
