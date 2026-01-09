@@ -173,6 +173,23 @@ CREATE TABLE IF NOT EXISTS recording_logs (
     file_path VARCHAR(500) NOT NULL
 );
 
+-- Agents (Local agents that run on customer's network)
+CREATE TABLE IF NOT EXISTS agents (
+    id SERIAL PRIMARY KEY,
+    agent_id VARCHAR(255) UNIQUE NOT NULL,  -- Unique identifier like "agent_abc123"
+    name VARCHAR(255) NOT NULL,
+    tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    local_ip VARCHAR(50),
+    version VARCHAR(50),
+    token_hash BIGINT,
+    cameras_count INTEGER DEFAULT 0,
+    relay_status VARCHAR(50) DEFAULT 'idle',
+    is_active BOOLEAN DEFAULT TRUE,
+    last_seen TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    registered_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- =============================================================================
 -- PARTE 3: Índices para mejor rendimiento
 -- =============================================================================
@@ -192,6 +209,13 @@ CREATE INDEX IF NOT EXISTS idx_cameras_location ON cameras(location_id);
 CREATE INDEX IF NOT EXISTS idx_cameras_rtsp ON cameras(rtsp_url);
 CREATE INDEX IF NOT EXISTS idx_recording_logs_camera ON recording_logs(camera_id);
 CREATE INDEX IF NOT EXISTS idx_recording_logs_start ON recording_logs(start_time);
+
+-- Agent indexes
+CREATE INDEX IF NOT EXISTS idx_agents_tenant ON agents(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_agents_name ON agents(name);
+CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(is_active);
+CREATE INDEX IF NOT EXISTS idx_agents_last_seen ON agents(last_seen);
+CREATE INDEX IF NOT EXISTS idx_agents_tenant_name_ip ON agents(tenant_id, name, local_ip);
 
 -- =============================================================================
 -- PARTE 4: Datos iniciales (Opcional)

@@ -16,7 +16,7 @@ import zipfile
 import os
 
 from database import get_db
-from models import Tenant, Location, Camera
+from models import Tenant, Location, Camera, Agent
 from services.mediamtx import add_camera_path, remove_camera_path, sanitize_path_name
 
 
@@ -88,16 +88,15 @@ class StartRelayRequest(BaseModel):
 
 
 # =============================================================================
-# In-Memory Storage (In production, use Redis or database)
+# In-Memory Storage (for temporary/volatile data only)
 # =============================================================================
 
-# Active agents: agent_id -> {name, token_hash, tenant_id, local_ip, last_seen, ...}
-active_agents = {}
-
 # Pending commands for agents: agent_id -> [commands]
+# These are transient and don't need persistence
 pending_commands = {}
 
 # Discovered cameras by agent: agent_id -> [cameras]
+# These are temporary scan results, refreshed on each discovery
 discovered_cameras_cache = {}
 
 
@@ -158,36 +157,49 @@ async def register_agent(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     
-    # Check if agent already exists with same name, tenant, and local_ip
-    existing_agent_id = None
-    for aid, info in active_agents.items():
-        if (info["name"] == request.name and 
-            info["tenant_id"] == tenant_id and 
-            info["local_ip"] == request.local_ip):
-            existing_agent_id = aid
-            break
+    # Check if agent already exists with same name, tenant, and local_ip in database
+    result = await db.execute(
+        select(Agent).filter(
+            and_(
+                Agent.name == request.name,
+                Agent.tenant_id == tenant_id,
+                Agent.local_ip == request.local_ip,
+                Agent.is_active == True
+            )
+        )
+    )
+    existing_agent = result.scalars().first()
     
-    # Reuse existing agent_id or generate new one
-    agent_id = existing_agent_id if existing_agent_id else generate_agent_id()
+    token_hash_value = hash(request.token)
     
-    # Store/update agent info
-    active_agents[agent_id] = {
-        "name": request.name,
-        "tenant_id": tenant_id,
-        "tenant_slug": tenant.slug,
-        "local_ip": request.local_ip,
-        "version": request.version,
-        "registered_at": active_agents.get(agent_id, {}).get("registered_at", datetime.utcnow().isoformat()),
-        "last_seen": datetime.utcnow().isoformat(),
-        "token_hash": hash(request.token)
-    }
+    if existing_agent:
+        # Update existing agent
+        existing_agent.version = request.version
+        existing_agent.last_seen = datetime.utcnow()
+        existing_agent.token_hash = token_hash_value
+        agent_id = existing_agent.agent_id
+    else:
+        # Create new agent
+        agent_id = generate_agent_id()
+        new_agent = Agent(
+            agent_id=agent_id,
+            name=request.name,
+            tenant_id=tenant_id,
+            local_ip=request.local_ip,
+            version=request.version,
+            token_hash=token_hash_value,
+            is_active=True,
+            last_seen=datetime.utcnow()
+        )
+        db.add(new_agent)
+    
+    await db.commit()
     
     # Initialize pending commands if new agent
     if agent_id not in pending_commands:
         pending_commands[agent_id] = []
     
     # Get RTSP server URL from environment or use default
-    import os
     rtsp_host = os.getenv("RTSP_PUBLIC_HOST", "localhost")
     rtsp_port = os.getenv("RTSP_PUBLIC_PORT", "8554")
     rtsp_server_url = f"rtsp://{rtsp_host}:{rtsp_port}"
@@ -202,24 +214,33 @@ async def register_agent(
 @router.post("/{agent_id}/heartbeat", response_model=AgentHeartbeatResponse)
 async def agent_heartbeat(
     agent_id: str,
-    request: AgentHeartbeatRequest
+    request: AgentHeartbeatRequest,
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Receive heartbeat from agent and return any pending commands.
     """
-    if agent_id not in active_agents:
+    # Find agent in database
+    result = await db.execute(
+        select(Agent).filter(Agent.agent_id == agent_id, Agent.is_active == True)
+    )
+    agent = result.scalars().first()
+    
+    if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
     # Verify token
-    if hash(request.token) != active_agents[agent_id]["token_hash"]:
+    if hash(request.token) != agent.token_hash:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-    # Update last seen
-    active_agents[agent_id]["last_seen"] = datetime.utcnow().isoformat()
-    active_agents[agent_id]["cameras_count"] = request.cameras_count
-    active_agents[agent_id]["relay_status"] = request.relay_status
+    # Update last seen and stats in database
+    agent.last_seen = datetime.utcnow()
+    agent.cameras_count = request.cameras_count
+    agent.relay_status = request.relay_status
     
-    # Get and clear pending commands
+    await db.commit()
+    
+    # Get and clear pending commands (from memory)
     commands = pending_commands.get(agent_id, [])
     pending_commands[agent_id] = []
     
@@ -237,14 +258,20 @@ async def report_discovered_cameras(
     """
     Agent reports cameras discovered on the local network.
     """
-    if agent_id not in active_agents:
+    # Find agent in database
+    result = await db.execute(
+        select(Agent).filter(Agent.agent_id == agent_id, Agent.is_active == True)
+    )
+    agent = result.scalars().first()
+    
+    if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
     # Verify token
-    if hash(request.token) != active_agents[agent_id]["token_hash"]:
+    if hash(request.token) != agent.token_hash:
         raise HTTPException(status_code=401, detail="Invalid token")
     
-    # Store discovered cameras
+    # Store discovered cameras in memory cache
     discovered_cameras_cache[agent_id] = [cam.dict() for cam in request.cameras]
     
     return {
@@ -254,11 +281,20 @@ async def report_discovered_cameras(
 
 
 @router.get("/{agent_id}/discovered")
-async def get_discovered_cameras(agent_id: str):
+async def get_discovered_cameras(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Get cameras discovered by an agent.
     """
-    if agent_id not in active_agents:
+    # Find agent in database
+    result = await db.execute(
+        select(Agent).filter(Agent.agent_id == agent_id, Agent.is_active == True)
+    )
+    agent = result.scalars().first()
+    
+    if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
     return {
@@ -268,11 +304,20 @@ async def get_discovered_cameras(agent_id: str):
 
 
 @router.post("/{agent_id}/discover")
-async def trigger_discovery(agent_id: str):
+async def trigger_discovery(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Trigger camera discovery on an agent.
     """
-    if agent_id not in active_agents:
+    # Find agent in database
+    result = await db.execute(
+        select(Agent).filter(Agent.agent_id == agent_id, Agent.is_active == True)
+    )
+    agent = result.scalars().first()
+    
+    if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
     # Add discover command to pending commands
@@ -294,13 +339,17 @@ async def start_camera_relay(
     
     This also creates the camera in the database and configures MediaMTX.
     """
-    if agent_id not in active_agents:
+    # Find agent in database
+    result = await db.execute(
+        select(Agent).filter(Agent.agent_id == agent_id, Agent.is_active == True)
+    )
+    agent = result.scalars().first()
+    
+    if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
-    agent = active_agents[agent_id]
-    
     # Verify token
-    if hash(request.token) != agent["token_hash"]:
+    if hash(request.token) != agent.token_hash:
         raise HTTPException(status_code=401, detail="Invalid token")
     
     # Get tenant and location info
@@ -357,11 +406,21 @@ async def start_camera_relay(
 
 
 @router.post("/{agent_id}/stop-relay/{camera_id}")
-async def stop_camera_relay(agent_id: str, camera_id: str):
+async def stop_camera_relay(
+    agent_id: str,
+    camera_id: str,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Command an agent to stop relaying a camera stream.
     """
-    if agent_id not in active_agents:
+    # Find agent in database
+    result = await db.execute(
+        select(Agent).filter(Agent.agent_id == agent_id, Agent.is_active == True)
+    )
+    agent = result.scalars().first()
+    
+    if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
     # Queue command for agent
@@ -380,74 +439,116 @@ async def list_agents(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    List all active agents.
+    List all active agents from database.
     
     - Super admins can see all agents (no tenant_id filter)
     - Regular admins see only their tenant's agents (tenant_id required)
     """
-    agents = []
-    now = datetime.utcnow()
+    # Build query
+    query = select(Agent).filter(Agent.is_active == True)
+    if tenant_id is not None:
+        query = query.filter(Agent.tenant_id == tenant_id)
     
-    for agent_id, info in active_agents.items():
-        # Filter by tenant if specified
-        if tenant_id is not None and info["tenant_id"] != tenant_id:
-            continue
-            
-        last_seen = datetime.fromisoformat(info["last_seen"])
-        is_online = (now - last_seen) < timedelta(minutes=2)
+    result = await db.execute(query)
+    db_agents = result.scalars().all()
+    
+    now = datetime.utcnow()
+    agents = []
+    
+    for agent in db_agents:
+        # Get tenant info
+        tenant_result = await db.execute(select(Tenant).filter(Tenant.id == agent.tenant_id))
+        tenant = tenant_result.scalars().first()
+        
+        # Calculate online status
+        is_online = False
+        if agent.last_seen:
+            # Handle both timezone-aware and naive datetimes
+            last_seen = agent.last_seen
+            if last_seen.tzinfo is not None:
+                last_seen = last_seen.replace(tzinfo=None)
+            is_online = (now - last_seen) < timedelta(minutes=2)
         
         agents.append({
-            "agent_id": agent_id,
-            "name": info["name"],
-            "tenant_id": info["tenant_id"],
-            "tenant_slug": info.get("tenant_slug", ""),
-            "local_ip": info["local_ip"],
-            "version": info["version"],
+            "agent_id": agent.agent_id,
+            "name": agent.name,
+            "tenant_id": agent.tenant_id,
+            "tenant_slug": tenant.slug if tenant else "",
+            "local_ip": agent.local_ip,
+            "version": agent.version,
             "is_online": is_online,
-            "last_seen": info["last_seen"],
-            "cameras_count": info.get("cameras_count", 0),
-            "discovered_cameras_count": len(discovered_cameras_cache.get(agent_id, []))
+            "last_seen": agent.last_seen.isoformat() if agent.last_seen else None,
+            "cameras_count": agent.cameras_count or 0,
+            "discovered_cameras_count": len(discovered_cameras_cache.get(agent.agent_id, []))
         })
     
     return {"agents": agents}
 
 
 @router.get("/{agent_id}")
-async def get_agent(agent_id: str):
+async def get_agent(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Get details of a specific agent.
+    Get details of a specific agent from database.
     """
-    if agent_id not in active_agents:
+    result = await db.execute(
+        select(Agent).filter(Agent.agent_id == agent_id, Agent.is_active == True)
+    )
+    agent = result.scalars().first()
+    
+    if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
-    info = active_agents[agent_id]
-    last_seen = datetime.fromisoformat(info["last_seen"])
-    is_online = (datetime.utcnow() - last_seen) < timedelta(minutes=2)
+    # Get tenant info
+    tenant_result = await db.execute(select(Tenant).filter(Tenant.id == agent.tenant_id))
+    tenant = tenant_result.scalars().first()
+    
+    now = datetime.utcnow()
+    is_online = False
+    if agent.last_seen:
+        last_seen = agent.last_seen
+        if last_seen.tzinfo is not None:
+            last_seen = last_seen.replace(tzinfo=None)
+        is_online = (now - last_seen) < timedelta(minutes=2)
     
     return {
-        "agent_id": agent_id,
-        "name": info["name"],
-        "tenant_id": info["tenant_id"],
-        "tenant_slug": info["tenant_slug"],
-        "local_ip": info["local_ip"],
-        "version": info["version"],
+        "agent_id": agent.agent_id,
+        "name": agent.name,
+        "tenant_id": agent.tenant_id,
+        "tenant_slug": tenant.slug if tenant else "",
+        "local_ip": agent.local_ip,
+        "version": agent.version,
         "is_online": is_online,
-        "last_seen": info["last_seen"],
-        "registered_at": info["registered_at"],
-        "cameras_count": info.get("cameras_count", 0),
-        "relay_status": info.get("relay_status", {})
+        "last_seen": agent.last_seen.isoformat() if agent.last_seen else None,
+        "registered_at": agent.registered_at.isoformat() if agent.registered_at else None,
+        "cameras_count": agent.cameras_count or 0,
+        "relay_status": agent.relay_status or "idle"
     }
 
 
 @router.delete("/{agent_id}")
-async def delete_agent(agent_id: str):
+async def delete_agent(
+    agent_id: str,
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Unregister an agent.
+    Unregister an agent (soft delete).
     """
-    if agent_id not in active_agents:
+    result = await db.execute(
+        select(Agent).filter(Agent.agent_id == agent_id, Agent.is_active == True)
+    )
+    agent = result.scalars().first()
+    
+    if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
-    del active_agents[agent_id]
+    # Soft delete - mark as inactive
+    agent.is_active = False
+    await db.commit()
+    
+    # Clean up in-memory caches
     pending_commands.pop(agent_id, None)
     discovered_cameras_cache.pop(agent_id, None)
     

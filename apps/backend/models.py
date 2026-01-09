@@ -247,3 +247,41 @@ class RecordingLog(Base):
     file_path = Column(String)
     
     camera = relationship("Camera", back_populates="recordings")
+
+
+# =============================================================================
+# Local Agent Model
+# =============================================================================
+
+class Agent(Base):
+    """
+    Local agent that runs on customer's network to discover and relay cameras.
+    """
+    __tablename__ = "agents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(String, unique=True, index=True)  # Unique identifier like "agent_abc123"
+    name = Column(String, index=True)
+    
+    # Tenant association
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    
+    # Agent details
+    local_ip = Column(String)
+    version = Column(String)
+    token_hash = Column(BigInteger)  # Hash of the authentication token
+    
+    # Runtime status
+    cameras_count = Column(Integer, default=0)  # Number of cameras managed by this agent
+    relay_status = Column(String, default="idle")  # Current relay status
+    
+    # Status tracking
+    is_active = Column(Boolean, default=True)  # If False, agent is marked as deleted
+    last_seen = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Timestamps
+    registered_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    tenant = relationship("Tenant")

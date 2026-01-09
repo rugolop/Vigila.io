@@ -566,7 +566,7 @@ export default function AgentsPage() {
 
         {/* Discovered Cameras Dialog */}
         <Dialog open={!!selectedAgent} onOpenChange={() => setSelectedAgent(null)}>
-          <DialogContent className="sm:max-w-[700px]">
+          <DialogContent className="sm:max-w-175">
             <DialogHeader>
               <DialogTitle>
                 Cámaras Descubiertas - {selectedAgent?.name}
@@ -575,7 +575,7 @@ export default function AgentsPage() {
                 Cámaras encontradas en la red local del agente
               </DialogDescription>
             </DialogHeader>
-            <div className="max-h-[400px] overflow-y-auto">
+            <div className="max-h-100 overflow-y-auto">
               {loadingCameras ? (
                 <div className="space-y-2">
                   <Skeleton className="h-16 w-full" />
@@ -585,7 +585,7 @@ export default function AgentsPage() {
                 <div className="text-center py-8">
                   <Camera className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-muted-foreground">
-                    No se han descubierto cámaras aún. Haz clic en "Buscar cámaras" para iniciar.
+                    No se han descubierto cámaras aún. Haz clic en -Buscar cámaras- para iniciar.
                   </p>
                 </div>
               ) : (
@@ -745,7 +745,7 @@ export default function AgentsPage() {
 
         {/* Connect Camera Dialog */}
         <Dialog open={showConnectDialog} onOpenChange={setShowConnectDialog}>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="sm:max-w-125">
             <DialogHeader>
               <DialogTitle>Conectar Cámara</DialogTitle>
               <DialogDescription>
