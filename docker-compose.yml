@@ -14,7 +14,7 @@ services:
       - "9997:9997"   # API
     volumes:
       - ./mediamtx.yml:/mediamtx.yml
-      - ./recordings:/recordings
+      - ./video_storage:/recordings
     restart: unless-stopped
 
   backend:
@@ -24,7 +24,7 @@ services:
       - "8001:8001"
     volumes:
       - ./apps/backend:/app
-      - ./recordings:/recordings
+      - ./video_storage:/recordings
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/smartdvr
       - MEDIAMTX_API_URL=http://mediamtx:9997

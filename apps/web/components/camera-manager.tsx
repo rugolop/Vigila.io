@@ -176,7 +176,7 @@ export const CameraManager = () => {
 
   const fetchCameras = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/cameras/`)
+      const response = await fetch(`${API_URL}/api/cameras`)
       if (response.ok) {
         const data = await response.json()
         setCameras(data)
@@ -190,7 +190,7 @@ export const CameraManager = () => {
     setDiscovering(true)
     try {
       const response = await fetch(
-        `${API_URL}/api/cameras/discover?use_onvif=true&use_port_scan=true&network_range=${encodeURIComponent(networkRange)}`,
+        `${API_URL}/api/camerasdiscover?use_onvif=true&use_port_scan=true&network_range=${encodeURIComponent(networkRange)}`,
         { method: "POST" }
       )
       if (response.ok) {
@@ -208,7 +208,7 @@ export const CameraManager = () => {
     setTestingConnection(true)
     setConnectionResult(null)
     try {
-      const response = await fetch(`${API_URL}/api/cameras/test-rtsp`, {
+      const response = await fetch(`${API_URL}/api/camerastest-rtsp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rtsp_url: rtspUrl, timeout: 5 }),
@@ -245,7 +245,7 @@ export const CameraManager = () => {
     
     setAddingCamera(selectedDiscoveredCamera.ip)
     try {
-      const response = await fetch(`${API_URL}/api/cameras/`, {
+      const response = await fetch(`${API_URL}/api/cameras`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -279,7 +279,7 @@ export const CameraManager = () => {
     e.preventDefault()
     setLoading(true)
     try {
-      const response = await fetch(`${API_URL}/api/cameras/`, {
+      const response = await fetch(`${API_URL}/api/cameras`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -317,7 +317,7 @@ export const CameraManager = () => {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/cameras/${cameraId}`, {
+      const response = await fetch(`${API_URL}/api/cameras${cameraId}`, {
         method: "DELETE",
       })
 
@@ -332,7 +332,7 @@ export const CameraManager = () => {
   const handleToggleRecording = async (camera: Camera) => {
     setTogglingRecording(camera.id)
     try {
-      const response = await fetch(`${API_URL}/api/cameras/${camera.id}/recording/toggle`, {
+      const response = await fetch(`${API_URL}/api/cameras${camera.id}/recording/toggle`, {
         method: "POST",
       })
       
@@ -370,7 +370,7 @@ export const CameraManager = () => {
     
     setSaving(true)
     try {
-      const response = await fetch(`${API_URL}/api/cameras/${editingCamera.id}`, {
+      const response = await fetch(`${API_URL}/api/cameras${editingCamera.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -47,8 +47,8 @@ coverage
 *.md
 !README.md
 
-# Recordings (datos locales - solo carpeta raíz)
-/recordings
+# Video storage (datos locales de grabaciones)
+/video_storage
 
 # Python cache (del backend)
 __pycache__

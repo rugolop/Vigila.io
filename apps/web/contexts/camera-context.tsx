@@ -29,7 +29,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const fetchCameras = async () => {
     setLoading(true)
     try {
-      const response = await fetch(`${API_URL}/api/cameras/`)
+      const response = await fetch(`${API_URL}/api/cameras`)
       if (response.ok) {
         const data = await response.json()
         setCameras(data)

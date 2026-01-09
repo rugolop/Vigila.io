@@ -51,7 +51,7 @@ venv.bak/
 
 # Data
 data/
-recordings/
+video_storage/
 
 # Dokploy / Docker
 .docker/

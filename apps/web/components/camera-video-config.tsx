@@ -134,7 +134,7 @@ export function CameraVideoConfig() {
   
   const fetchCameras = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/cameras/`)
+      const response = await fetch(`${API_URL}/api/cameras`)
       if (response.ok) {
         const data = await response.json()
         setCameras(data)
@@ -175,7 +175,7 @@ export function CameraVideoConfig() {
     setConnectionStatus("idle")
     
     try {
-      const response = await fetch(`${API_URL}/api/cameras/onvif/test-connection`, {
+      const response = await fetch(`${API_URL}/api/camerasonvif/test-connection`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials)
@@ -204,7 +204,7 @@ export function CameraVideoConfig() {
     setConfig(null)
     
     try {
-      const response = await fetch(`${API_URL}/api/cameras/onvif/config`, {
+      const response = await fetch(`${API_URL}/api/camerasonvif/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials)
@@ -264,7 +264,7 @@ export function CameraVideoConfig() {
     setSaving(true)
     
     try {
-      const response = await fetch(`${API_URL}/api/cameras/onvif/config`, {
+      const response = await fetch(`${API_URL}/api/camerasonvif/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -475,7 +475,7 @@ async def initialize_default_storage(db: AsyncSession):
             name="Local Storage",
             storage_type=StorageType.LOCAL.value,
             mount_path="/recordings",
-            host_path="./recordings",
+            host_path="./video_storage",
             is_primary=True,
             is_active=True,
             status=StorageStatus.ACTIVE.value,

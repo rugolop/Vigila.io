@@ -118,6 +118,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      - TZ=Europe/Madrid
       - SLEEP_TIME=5m
       - FILTER_SERVICES=label=com.docker.stack.namespace=vigilaio-vigila-o5ec3m
       # GitHub Container Registry (ghcr.io) - autenticación requerida

@@ -106,7 +106,7 @@ export default function AgentsPage() {
       setError(null)
       
       // Build URL with tenant filter
-      let url = `${API_URL}/api/agents/`
+      let url = `${API_URL}/api/agents`
       
       if (!isSuperAdmin && tenantId) {
         // Regular admin: filter by their tenant
@@ -133,7 +133,7 @@ export default function AgentsPage() {
     if (!isSuperAdmin) return
     
     try {
-      const response = await fetch(`${API_URL}/api/tenants/`)
+      const response = await fetch(`${API_URL}/api/tenants`)
       if (response.ok) {
         const data = await response.json()
         setTenants(data || [])
