@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useTenant } from "@/hooks/use-tenant"
-import { RequireAdmin, AccessDenied } from "@/components/access-control"
+import { RequireAdmin} from "@/components/access-control"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,7 +21,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import {
   Select,
@@ -38,10 +37,7 @@ import {
   WifiOff, 
   Trash2, 
   RefreshCw, 
-  Camera, 
-  Plus, 
-  Copy, 
-  Check,
+  Camera,
   Server,
   Search,
   Eye,

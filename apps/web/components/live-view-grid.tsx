@@ -132,11 +132,11 @@ export const LiveViewGrid = () => {
               <Card className="w-40 h-24 bg-gray-900">
                 <CardContent className="p-0 h-full relative">
                   {/* Thumbnail preview - shows a static frame or icon */}
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-black/60 to-transparent">
+                  <div className="absolute inset-0 flex items-center justify-center bg-linear-to-t from-black/60 to-transparent">
                     <Video className="h-6 w-6 text-white/70" />
                   </div>
                   {/* Camera name overlay */}
-                  <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent">
+                  <div className="absolute bottom-0 left-0 right-0 p-2 bg-linear-to-t from-black/80 to-transparent">
                     <p className="text-xs font-medium text-white truncate">
                       {camera.name}
                     </p>
