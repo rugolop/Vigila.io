@@ -255,7 +255,8 @@ async def agent_heartbeat(
 @router.post("/{agent_id}/cameras")
 async def report_discovered_cameras(
     agent_id: str,
-    request: AgentCamerasRequest
+    request: AgentCamerasRequest,
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Agent reports cameras discovered on the local network.
