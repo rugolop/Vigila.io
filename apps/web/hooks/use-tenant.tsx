@@ -119,6 +119,7 @@ export function TenantProvider({ children }: TenantProviderProps) {
 
   const fetchTenantUser = useCallback(async () => {
     if (!session?.user?.id) {
+      console.log("[DEBUG useTenant] No session user id")
       setTenantUser(null)
       setLoading(false)
       return
@@ -129,14 +130,21 @@ export function TenantProvider({ children }: TenantProviderProps) {
       setError(null)
       
       // Obtener información del usuario actual
-      const response = await fetch(`${API_URL}/api/me`, {
+      const url = `${API_URL}/api/me`
+      console.log("[DEBUG useTenant] Fetching from:", url, "with X-User-Id:", session.user.id)
+      
+      const response = await fetch(url, {
         headers: {
           "X-User-Id": session.user.id,
         },
       })
       
+      console.log("[DEBUG useTenant] Response status:", response.status)
+      
       if (response.ok) {
         const data = await response.json()
+        console.log("[DEBUG useTenant] User data received:", data)
+        console.log("[DEBUG useTenant] Role:", data?.role, "isSuperAdmin will be:", data?.role === "superadmin")
         if (data) {
           setTenantUser(data)
           setLoading(false)

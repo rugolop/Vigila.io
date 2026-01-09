@@ -130,18 +130,34 @@ export default function AgentsPage() {
 
   // Fetch tenants for super admin
   const fetchTenants = useCallback(async () => {
-    if (!isSuperAdmin) return
+    // DEBUG: Log para diagnóstico en producción
+    console.log("[DEBUG fetchTenants] isSuperAdmin:", isSuperAdmin, "tenantId:", tenantId)
+    
+    if (!isSuperAdmin) {
+      console.log("[DEBUG fetchTenants] Skipping - not super admin")
+      return
+    }
     
     try {
-      const response = await fetch(`${API_URL}/api/tenants`)
+      const url = `${API_URL}/api/tenants`
+      console.log("[DEBUG fetchTenants] Fetching from:", url)
+      
+      const response = await fetch(url)
+      console.log("[DEBUG fetchTenants] Response status:", response.status, response.statusText)
+      console.log("[DEBUG fetchTenants] Response headers:", Object.fromEntries(response.headers.entries()))
+      
       if (response.ok) {
         const data = await response.json()
+        console.log("[DEBUG fetchTenants] Data received:", data)
         setTenants(data || [])
+      } else {
+        const errorText = await response.text()
+        console.error("[DEBUG fetchTenants] Error response:", errorText)
       }
     } catch (err) {
-      console.error("Error fetching tenants:", err)
+      console.error("[DEBUG fetchTenants] Exception:", err)
     }
-  }, [isSuperAdmin])
+  }, [isSuperAdmin, tenantId])
 
   useEffect(() => {
     if (!tenantLoading) {
@@ -618,6 +634,15 @@ export default function AgentsPage() {
                 El token se genera automáticamente.
               </DialogDescription>
             </DialogHeader>
+            {/* DEBUG: Mostrar valores para diagnóstico */}
+            <div className="bg-yellow-100 dark:bg-yellow-900 p-2 rounded text-xs mb-2">
+              <p><strong>DEBUG:</strong></p>
+              <p>isSuperAdmin: {String(isSuperAdmin)}</p>
+              <p>tenants.length: {tenants.length}</p>
+              <p>tenants: {JSON.stringify(tenants.map(t => ({id: t.id, name: t.name})))}</p>
+              <p>tenantId (from useTenant): {tenantId}</p>
+              <p>Condition (isSuperAdmin &amp;&amp; tenants.length &gt; 0): {String(isSuperAdmin && tenants.length > 0)}</p>
+            </div>
             <div className="space-y-4">
               {isSuperAdmin && tenants.length > 0 && (
                 <div className="space-y-2">
