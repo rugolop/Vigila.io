@@ -9,8 +9,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 import {
   Table,
   TableBody,
@@ -19,6 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 import {
   Select,
   SelectContent,
