@@ -47,8 +47,8 @@ coverage
 *.md
 !README.md
 
-# Recordings (datos locales)
-recordings
+# Recordings (datos locales - solo carpeta raíz)
+/recordings
 
 # Python cache (del backend)
 __pycache__
