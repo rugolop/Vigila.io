@@ -239,7 +239,7 @@ def get_recording_file_path(folder_path: str, filename: str) -> str:
 
 
 
-@router.get("/", response_model=List[RecordingInfo])
+@router.get("", response_model=List[RecordingInfo])
 async def get_recordings(
     camera_id: Optional[int] = Query(None),
     tenant_id: Optional[int] = Query(None),

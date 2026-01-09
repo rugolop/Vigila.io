@@ -75,7 +75,8 @@ async def lifespan(app: FastAPI):
 from fastapi.staticfiles import StaticFiles
 import os
 
-app = FastAPI(title="Smart DVR API", lifespan=lifespan)
+# Disable automatic redirect_slashes to avoid 307 redirects that break HTTPS->HTTP
+app = FastAPI(title="Smart DVR API", lifespan=lifespan, redirect_slashes=False)
 
 # Configure CORS
 cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000")

@@ -125,7 +125,7 @@ async def update_volume_status(db: AsyncSession, volume_id: int, status: str,
 # Endpoints
 # ============================================================================
 
-@router.get("/", response_model=List[StorageVolumeResponse])
+@router.get("", response_model=List[StorageVolumeResponse])
 async def list_storage_volumes(db: AsyncSession = Depends(get_db)):
     """Get all configured storage volumes."""
     result = await db.execute(select(StorageVolume).order_by(StorageVolume.created_at))
@@ -203,7 +203,7 @@ async def get_volume_stats(volume_id: int, db: AsyncSession = Depends(get_db)):
     return get_storage_stats(volume.mount_path)
 
 
-@router.post("/", response_model=StorageVolumeResponse)
+@router.post("", response_model=StorageVolumeResponse)
 async def create_storage_volume(
     volume: StorageVolumeCreate,
     db: AsyncSession = Depends(get_db)

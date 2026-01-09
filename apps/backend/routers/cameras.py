@@ -185,7 +185,7 @@ async def test_rtsp_connection(request: RTSPTestRequest):
         }
 
 
-@router.post("/", response_model=CameraResponse)
+@router.post("", response_model=CameraResponse)
 async def create_camera(camera: CameraCreate, db: AsyncSession = Depends(get_db)):
     # Validate tenant_id if provided
     tenant = None
@@ -264,7 +264,7 @@ async def create_camera(camera: CameraCreate, db: AsyncSession = Depends(get_db)
     
     return db_camera
 
-@router.get("/", response_model=List[CameraResponse])
+@router.get("", response_model=List[CameraResponse])
 async def read_cameras(
     skip: int = 0, 
     limit: int = 100, 

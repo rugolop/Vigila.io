@@ -362,7 +362,7 @@ async def stop_camera_relay(agent_id: str, camera_id: str):
     return {"status": "ok", "message": f"Stop relay command queued for camera {camera_id}"}
 
 
-@router.get("/")
+@router.get("")
 async def list_agents(
     tenant_id: Optional[int] = None,
     x_user_id: Optional[str] = None,
