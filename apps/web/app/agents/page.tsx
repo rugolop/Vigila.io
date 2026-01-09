@@ -63,6 +63,7 @@ interface Agent {
   is_online: boolean
   last_seen: string
   cameras_count: number
+  discovered_cameras_count: number
 }
 
 interface DiscoveredCamera {
@@ -95,6 +96,17 @@ export default function AgentsPage() {
   const [agentName, setAgentName] = useState("vigila-agent")
   const [downloading, setDownloading] = useState(false)
   const [downloadTenantId, setDownloadTenantId] = useState<string>("")
+  
+  // Connect camera state
+  const [showConnectDialog, setShowConnectDialog] = useState(false)
+  const [cameraToConnect, setCameraToConnect] = useState<DiscoveredCamera | null>(null)
+  const [cameraName, setCameraName] = useState("")
+  const [rtspUrl, setRtspUrl] = useState("")
+  const [rtspUsername, setRtspUsername] = useState("")
+  const [rtspPassword, setRtspPassword] = useState("")
+  const [connectingCamera, setConnectingCamera] = useState(false)
+  const [locations, setLocations] = useState<{id: number, name: string}[]>([])
+  const [selectedLocationId, setSelectedLocationId] = useState<string>("")
 
   // Fetch agents
   const fetchAgents = useCallback(async () => {
@@ -139,6 +151,22 @@ export default function AgentsPage() {
       console.error("Error fetching tenants:", err)
     }
   }, [isSuperAdmin])
+
+  // Fetch locations for camera connection
+  const fetchLocations = useCallback(async () => {
+    const targetTenantId = isSuperAdmin ? (selectedAgent?.tenant_id || tenantId) : tenantId
+    if (!targetTenantId) return
+    
+    try {
+      const response = await fetch(`${API_URL}/api/locations?tenant_id=${targetTenantId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setLocations(data || [])
+      }
+    } catch (err) {
+      console.error("Error fetching locations:", err)
+    }
+  }, [isSuperAdmin, selectedAgent?.tenant_id, tenantId])
 
   useEffect(() => {
     if (!tenantLoading) {
@@ -239,6 +267,7 @@ export default function AgentsPage() {
   const viewDiscoveredCameras = async (agent: Agent) => {
     setSelectedAgent(agent)
     setLoadingCameras(true)
+    fetchLocations()
     
     try {
       const response = await fetch(`${API_URL}/api/agents/${agent.agent_id}/discovered`)
@@ -250,6 +279,68 @@ export default function AgentsPage() {
       console.error("Error fetching cameras:", err)
     } finally {
       setLoadingCameras(false)
+    }
+  }
+
+  // Open connect camera dialog
+  const openConnectDialog = (camera: DiscoveredCamera) => {
+    setCameraToConnect(camera)
+    setCameraName(camera.name || `Cámara ${camera.ip}`)
+    // Build default RTSP URL
+    const defaultRtspUrl = camera.rtsp_url || `rtsp://${camera.ip}:554/stream1`
+    setRtspUrl(defaultRtspUrl)
+    setRtspUsername("")
+    setRtspPassword("")
+    setSelectedLocationId("")
+    setShowConnectDialog(true)
+  }
+
+  // Connect camera
+  const connectCamera = async () => {
+    if (!selectedAgent || !cameraToConnect) return
+    
+    setConnectingCamera(true)
+    
+    try {
+      // Build final RTSP URL with credentials if provided
+      let finalRtspUrl = rtspUrl
+      if (rtspUsername && rtspPassword) {
+        const urlObj = new URL(rtspUrl)
+        urlObj.username = rtspUsername
+        urlObj.password = rtspPassword
+        finalRtspUrl = urlObj.toString()
+      }
+      
+      const response = await fetch(`${API_URL}/api/cameras`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: cameraName,
+          rtsp_url: finalRtspUrl,
+          tenant_id: selectedAgent.tenant_id,
+          location_id: selectedLocationId ? parseInt(selectedLocationId) : null,
+          stream_mode: "agent",
+          agent_id: selectedAgent.agent_id,
+          source_ip: cameraToConnect.ip
+        })
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || "Error al conectar cámara")
+      }
+      
+      // Success
+      setShowConnectDialog(false)
+      setCameraToConnect(null)
+      alert("Cámara conectada exitosamente")
+      
+      // Refresh agents to update cameras_count
+      fetchAgents()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido")
+    } finally {
+      setConnectingCamera(false)
     }
   }
 
@@ -388,7 +479,8 @@ export default function AgentsPage() {
                     {isSuperAdmin && <TableHead>Tenant</TableHead>}
                     <TableHead>IP Local</TableHead>
                     <TableHead>Versión</TableHead>
-                    <TableHead>Cámaras</TableHead>
+                    <TableHead>Conectadas</TableHead>
+                    <TableHead>Descubiertas</TableHead>
                     <TableHead>Última Conexión</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
@@ -421,6 +513,13 @@ export default function AgentsPage() {
                         <Badge variant="outline">
                           <Camera className="h-3 w-3 mr-1" />
                           {agent.cameras_count}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={agent.discovered_cameras_count > 0 ? "default" : "outline"} 
+                               className={agent.discovered_cameras_count > 0 ? "bg-blue-500" : ""}>
+                          <Search className="h-3 w-3 mr-1" />
+                          {agent.discovered_cameras_count || 0}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -508,7 +607,11 @@ export default function AgentsPage() {
                         <TableCell>{camera.model}</TableCell>
                         <TableCell>{camera.name || "-"}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="outline" size="sm">
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => openConnectDialog(camera)}
+                          >
                             <MonitorPlay className="h-4 w-4 mr-1" />
                             Conectar
                           </Button>
@@ -633,6 +736,112 @@ export default function AgentsPage() {
                   <>
                     <Download className="h-4 w-4 mr-2" />
                     Descargar ZIP
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Connect Camera Dialog */}
+        <Dialog open={showConnectDialog} onOpenChange={setShowConnectDialog}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>Conectar Cámara</DialogTitle>
+              <DialogDescription>
+                Configura la conexión RTSP para la cámara {cameraToConnect?.ip}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="camera-name">Nombre de la cámara</Label>
+                <Input
+                  id="camera-name"
+                  value={cameraName}
+                  onChange={(e) => setCameraName(e.target.value)}
+                  placeholder="Ej: Cámara entrada principal"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="rtsp-url">URL RTSP</Label>
+                <Input
+                  id="rtsp-url"
+                  value={rtspUrl}
+                  onChange={(e) => setRtspUrl(e.target.value)}
+                  placeholder="rtsp://192.168.1.100:554/stream1"
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  La URL del stream RTSP de la cámara. Consulta el manual de tu cámara para la ruta correcta.
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="rtsp-user">Usuario (opcional)</Label>
+                  <Input
+                    id="rtsp-user"
+                    value={rtspUsername}
+                    onChange={(e) => setRtspUsername(e.target.value)}
+                    placeholder="admin"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="rtsp-pass">Contraseña (opcional)</Label>
+                  <Input
+                    id="rtsp-pass"
+                    type="password"
+                    value={rtspPassword}
+                    onChange={(e) => setRtspPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="camera-location">Ubicación (opcional)</Label>
+                <Select value={selectedLocationId} onValueChange={setSelectedLocationId}>
+                  <SelectTrigger id="camera-location">
+                    <SelectValue placeholder="Seleccionar ubicación" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Sin ubicación</SelectItem>
+                    {locations.map((loc) => (
+                      <SelectItem key={loc.id} value={loc.id.toString()}>
+                        {loc.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              {cameraToConnect?.onvif_url && (
+                <div className="bg-muted p-3 rounded-lg text-sm">
+                  <p className="font-medium mb-1">Información ONVIF detectada:</p>
+                  <p className="text-xs text-muted-foreground font-mono break-all">
+                    {cameraToConnect.onvif_url}
+                  </p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowConnectDialog(false)}>
+                Cancelar
+              </Button>
+              <Button 
+                onClick={connectCamera} 
+                disabled={connectingCamera || !cameraName || !rtspUrl}
+              >
+                {connectingCamera ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Conectando...
+                  </>
+                ) : (
+                  <>
+                    <MonitorPlay className="h-4 w-4 mr-2" />
+                    Conectar Cámara
                   </>
                 )}
               </Button>

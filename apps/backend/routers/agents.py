@@ -143,6 +143,7 @@ async def register_agent(
     Register a new local agent.
     
     The agent provides a token that identifies the tenant it belongs to.
+    If an agent with the same name, tenant, and local_ip already exists, reuse its ID.
     """
     # Verify token
     token_info = verify_agent_token(request.token)
@@ -157,23 +158,33 @@ async def register_agent(
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     
-    # Generate agent ID
-    agent_id = generate_agent_id()
+    # Check if agent already exists with same name, tenant, and local_ip
+    existing_agent_id = None
+    for aid, info in active_agents.items():
+        if (info["name"] == request.name and 
+            info["tenant_id"] == tenant_id and 
+            info["local_ip"] == request.local_ip):
+            existing_agent_id = aid
+            break
     
-    # Store agent info
+    # Reuse existing agent_id or generate new one
+    agent_id = existing_agent_id if existing_agent_id else generate_agent_id()
+    
+    # Store/update agent info
     active_agents[agent_id] = {
         "name": request.name,
         "tenant_id": tenant_id,
         "tenant_slug": tenant.slug,
         "local_ip": request.local_ip,
         "version": request.version,
-        "registered_at": datetime.utcnow().isoformat(),
+        "registered_at": active_agents.get(agent_id, {}).get("registered_at", datetime.utcnow().isoformat()),
         "last_seen": datetime.utcnow().isoformat(),
         "token_hash": hash(request.token)
     }
     
-    # Initialize pending commands
-    pending_commands[agent_id] = []
+    # Initialize pending commands if new agent
+    if agent_id not in pending_commands:
+        pending_commands[agent_id] = []
     
     # Get RTSP server URL from environment or use default
     import os
@@ -394,7 +405,8 @@ async def list_agents(
             "version": info["version"],
             "is_online": is_online,
             "last_seen": info["last_seen"],
-            "cameras_count": info.get("cameras_count", 0)
+            "cameras_count": info.get("cameras_count", 0),
+            "discovered_cameras_count": len(discovered_cameras_cache.get(agent_id, []))
         })
     
     return {"agents": agents}
