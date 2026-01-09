@@ -75,6 +75,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           pull: true
+          no-cache: true
           tags: |
             ${{ env.WEB_IMAGE }}:latest
             ${{ env.WEB_IMAGE }}:${{ github.sha }}
@@ -82,10 +83,6 @@ jobs:
             NEXT_PUBLIC_API_URL=https://api.vigila.itcore.es
             BETTER_AUTH_URL=https://vigila.itcore.es
             NEXT_PUBLIC_BETTER_AUTH_URL=https://vigila.itcore.es
-          cache-from: |
-            type=registry,ref=${{ env.WEB_IMAGE }}:buildcache
-            type=registry,ref=${{ env.WEB_IMAGE }}:latest
-          cache-to: type=registry,ref=${{ env.WEB_IMAGE }}:buildcache,mode=max
 
       - name: ✅ Build Complete
         run: |
