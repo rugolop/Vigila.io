@@ -96,6 +96,7 @@ class VigilaAgent:
     async def heartbeat(self):
         """
         Send periodic heartbeat to the server.
+        Automatically re-registers if the server doesn't recognize this agent.
         """
         while self.running:
             try:
@@ -115,6 +116,14 @@ class VigilaAgent:
                         data = response.json()
                         # Process any commands from server
                         await self.process_commands(data.get("commands", []))
+                    elif response.status_code == 404:
+                        # Agent not found on server (server may have restarted)
+                        logger.warning("Agent not found on server, re-registering...")
+                        self.registered = False
+                        if await self.register():
+                            logger.info("Re-registration successful")
+                        else:
+                            logger.error("Re-registration failed, will retry on next heartbeat")
                     else:
                         logger.warning(f"Heartbeat failed: {response.status_code}")
                         

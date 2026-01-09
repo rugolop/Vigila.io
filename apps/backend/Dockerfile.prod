@@ -30,4 +30,5 @@ ENV PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8001
 
 # Comando de producción (sin --reload)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "2"]
+# Usar 1 worker porque active_agents está en memoria y no se comparte entre workers
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]

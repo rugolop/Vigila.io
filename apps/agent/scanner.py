@@ -52,13 +52,16 @@ async def discover_onvif_cameras(timeout: int = 5) -> List[DiscoveredCamera]:
     
     try:
         from wsdiscovery.discovery import ThreadedWSDiscovery
+        from wsdiscovery import QName
         
         wsd = ThreadedWSDiscovery()
         wsd.start()
         
         # Search for ONVIF devices
+        # Use proper QName objects for WS-Discovery types
+        onvif_ns = "http://www.onvif.org/ver10/network/wsdl"
         services = wsd.searchServices(
-            types=["dn:NetworkVideoTransmitter"],
+            types=[QName(onvif_ns, "NetworkVideoTransmitter")],
             timeout=timeout
         )
         

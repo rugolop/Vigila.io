@@ -57,6 +57,7 @@ services:
       - MEDIAMTX_API_URL=http://mediamtx:9997
       - ENVIRONMENT=production
       - CORS_ORIGINS=${CORS_ORIGINS}
+      - PUBLIC_API_URL=https://api.vigila.itcore.es
     volumes:
       - recordings_prod:/recordings
     deploy:
@@ -120,7 +121,7 @@ services:
     environment:
       - TZ=Europe/Madrid
       - SLEEP_TIME=5m
-      - FILTER_SERVICES=label=com.docker.stack.namespace=vigilaio-vigila-o5ec3m
+      - FILTER_SERVICES=label=com.docker.stack.namespace=vigilaio-web-smhmts
       # GitHub Container Registry (ghcr.io) - autenticación requerida
       - REGISTRY_HOST=ghcr.io
       - REGISTRY_USER=${GITHUB_USERNAME:-rugolop}

@@ -292,7 +292,7 @@ export default function AgentsPage() {
             </CardHeader>
             <CardContent>
               <Select value={selectedTenant} onValueChange={setSelectedTenant}>
-                <SelectTrigger className="w-[300px]">
+                <SelectTrigger className="w-75">
                   <SelectValue placeholder="Todos los tenants" />
                 </SelectTrigger>
                 <SelectContent>
