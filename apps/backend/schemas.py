@@ -6,18 +6,20 @@ class CameraBase(BaseModel):
     name: str
     rtsp_url: str
     is_active: bool = True
-    stream_mode: Literal["auto", "direct", "ffmpeg"] = "auto"
+    stream_mode: Literal["auto", "direct", "ffmpeg", "agent"] = "auto"
 
 class CameraCreate(CameraBase):
     user_id: Optional[str] = None  # Better Auth user ID (legacy)
     tenant_id: Optional[int] = None
     location_id: Optional[int] = None
+    agent_id: Optional[str] = None  # Agent that manages this camera
+    source_ip: Optional[str] = None  # Original IP of the camera on agent's network
 
 class CameraUpdate(BaseModel):
     name: Optional[str] = None
     rtsp_url: Optional[str] = None
     is_active: Optional[bool] = None
-    stream_mode: Optional[Literal["auto", "direct", "ffmpeg"]] = None
+    stream_mode: Optional[Literal["auto", "direct", "ffmpeg", "agent"]] = None
     tenant_id: Optional[int] = None
     location_id: Optional[int] = None
 
