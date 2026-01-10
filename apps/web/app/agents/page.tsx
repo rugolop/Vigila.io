@@ -797,12 +797,12 @@ export default function AgentsPage() {
               
               <div className="space-y-2">
                 <Label htmlFor="camera-location">Ubicación (opcional)</Label>
-                <Select value={selectedLocationId} onValueChange={setSelectedLocationId}>
+                <Select value={selectedLocationId || "none"} onValueChange={(val) => setSelectedLocationId(val === "none" ? "" : val)}>
                   <SelectTrigger id="camera-location">
                     <SelectValue placeholder="Seleccionar ubicación" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Sin ubicación</SelectItem>
+                    <SelectItem value="none">Sin ubicación</SelectItem>
                     {locations.map((loc) => (
                       <SelectItem key={loc.id} value={loc.id.toString()}>
                         {loc.name}
