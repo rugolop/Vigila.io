@@ -6,7 +6,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 from database import get_db
-from models import Camera, Location, Tenant
+from models import Camera, Location, Tenant, Agent
 from schemas import CameraCreate, CameraResponse, CameraUpdate
 from services.mediamtx import (
     add_camera_path,
@@ -244,20 +244,48 @@ async def create_camera(camera: CameraCreate, db: AsyncSession = Depends(get_db)
     tenant_slug = tenant.slug if tenant else None
     location_name = location.name if location else None
     
-    success, final_mode = await add_camera_path(
-        path_name, 
-        camera.rtsp_url, 
-        camera.stream_mode,
-        tenant_slug=tenant_slug,
-        location_name=location_name
-    )
-    
-    # Update the stream_mode in database if auto-detection changed it
-    if camera.stream_mode == "auto" and final_mode in ["direct", "ffmpeg"]:
-        db_camera.stream_mode = final_mode
-        await db.commit()
-        await db.refresh(db_camera)
-        print(f"Camera {camera.name}: auto-detected mode is '{final_mode}'")
+    # Handle agent-relayed cameras differently
+    if camera.stream_mode == "agent" and camera.agent_id:
+        # For agent cameras, create a path that will receive the stream from agent
+        stream_key = f"{camera.agent_id}_{path_name}"
+        
+        # Configure MediaMTX to receive stream (not pull from URL)
+        success, final_mode = await add_camera_path(
+            stream_key,
+            "publisher",  # Will receive from agent
+            "direct",
+            tenant_slug=tenant_slug,
+            location_name=location_name
+        )
+        
+        # Import and use pending_commands from agents router
+        from routers.agents import pending_commands
+        
+        # Queue command for agent to start relaying
+        pending_commands.setdefault(camera.agent_id, []).append({
+            "type": "start_relay",
+            "camera_id": str(db_camera.id),
+            "rtsp_url": camera.rtsp_url,
+            "stream_key": stream_key
+        })
+        
+        print(f"Camera {camera.name}: queued start_relay command for agent {camera.agent_id}")
+    else:
+        # Normal camera - pull stream directly
+        success, final_mode = await add_camera_path(
+            path_name, 
+            camera.rtsp_url, 
+            camera.stream_mode,
+            tenant_slug=tenant_slug,
+            location_name=location_name
+        )
+        
+        # Update the stream_mode in database if auto-detection changed it
+        if camera.stream_mode == "auto" and final_mode in ["direct", "ffmpeg"]:
+            db_camera.stream_mode = final_mode
+            await db.commit()
+            await db.refresh(db_camera)
+            print(f"Camera {camera.name}: auto-detected mode is '{final_mode}'")
     
     if not success:
         print(f"Warning: Failed to add camera path to MediaMTX for camera {camera.name}")
