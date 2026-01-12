@@ -83,6 +83,7 @@ jobs:
             NEXT_PUBLIC_API_URL=https://api.vigila.itcore.es
             BETTER_AUTH_URL=https://vigila.itcore.es
             NEXT_PUBLIC_BETTER_AUTH_URL=https://vigila.itcore.es
+            NEXT_PUBLIC_STREAM_URL=https://stream.vigila.itcore.es
 
       - name: ✅ Build Complete
         run: |

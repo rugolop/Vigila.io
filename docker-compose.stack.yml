@@ -20,6 +20,7 @@ services:
       # NEXT_PUBLIC_* vars are baked at build time, but standalone mode needs them at runtime too
       - NEXT_PUBLIC_API_URL=https://api.vigila.itcore.es
       - NEXT_PUBLIC_BETTER_AUTH_URL=https://vigila.itcore.es
+      - NEXT_PUBLIC_STREAM_URL=https://stream.vigila.itcore.es
       - BETTER_AUTH_URL=${BETTER_AUTH_URL}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
       - DATABASE_URL=${DATABASE_URL_AUTH}

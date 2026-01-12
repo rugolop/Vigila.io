@@ -10,6 +10,7 @@ const nextConfig = {
   // Variables de entorno públicas - hardcoded para debug
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://api.vigila.itcore.es',
+    NEXT_PUBLIC_STREAM_URL: process.env.NEXT_PUBLIC_STREAM_URL || 'http://localhost:8888',
   },
 };
 

@@ -15,7 +15,8 @@ export function CameraViewer() {
 
   const getHLSUrl = (cameraName: string) => {
     const streamName = sanitizePathName(cameraName)
-    return `http://localhost:8888/${streamName}/index.m3u8`
+    const streamUrl = process.env.NEXT_PUBLIC_STREAM_URL || 'http://localhost:8888'
+    return `${streamUrl}/${streamName}/index.m3u8`
   }
 
   // Loading state
