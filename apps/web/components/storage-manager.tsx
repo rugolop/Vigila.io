@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -49,8 +49,17 @@ import {
   Clock,
   AlertTriangle,
   Loader2,
+  Database,
+  Film,
 } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
+import {
+  ChartConfig,
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart"
+import { PieChart, Pie, Cell, ResponsiveContainer, Label as RechartsLabel } from "recharts"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
 
@@ -168,6 +177,7 @@ export function StorageManager() {
   const [loading, setLoading] = useState(true)
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [checkingId, setCheckingId] = useState<number | null>(null)
+  const [selectedVolumeId, setSelectedVolumeId] = useState<number | null>(null)
   
   // Form state
   const [formData, setFormData] = useState({
@@ -190,6 +200,52 @@ export function StorageManager() {
   const [updatingRetention, setUpdatingRetention] = useState<number | null>(null)
   const [runningCleanup, setRunningCleanup] = useState(false)
   const [expandedVolume, setExpandedVolume] = useState<number | null>(null)
+  
+  // Get selected volume data
+  const selectedVolume = useMemo(() => {
+    if (!overview?.volumes || overview.volumes.length === 0) return null
+    if (selectedVolumeId) {
+      return overview.volumes.find(v => v.id === selectedVolumeId) || null
+    }
+    // Default to primary or first volume
+    return overview.volumes.find(v => v.is_primary) || overview.volumes[0] || null
+  }, [overview?.volumes, selectedVolumeId])
+  
+  // Auto-select primary volume when overview loads
+  useEffect(() => {
+    if (overview?.volumes && overview.volumes.length > 0 && !selectedVolumeId) {
+      const primary = overview.volumes.find(v => v.is_primary)
+      if (primary) {
+        setSelectedVolumeId(primary.id)
+      } else {
+        setSelectedVolumeId(overview.volumes[0]?.id || null)
+      }
+    }
+  }, [overview?.volumes, selectedVolumeId])
+  
+  // Chart config
+  const storageChartConfig = {
+    used: {
+      label: "Usado",
+      color: "hsl(var(--chart-1))",
+    },
+    free: {
+      label: "Libre",
+      color: "hsl(var(--chart-2))",
+    },
+  } satisfies ChartConfig
+  
+  // Chart data for selected volume
+  const storageChartData = useMemo(() => {
+    if (!selectedVolume) return []
+    const used = selectedVolume.used_bytes || 0
+    const total = selectedVolume.total_bytes || 0
+    const free = total - used
+    return [
+      { name: "Usado", value: used, fill: "hsl(var(--chart-1))" },
+      { name: "Libre", value: free, fill: "hsl(var(--chart-2))" },
+    ]
+  }, [selectedVolume])
   
   const fetchOverview = useCallback(async () => {
     try {
