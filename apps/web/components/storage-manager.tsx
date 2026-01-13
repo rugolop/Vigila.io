@@ -491,60 +491,199 @@ export function StorageManager() {
   
   return (
     <div className="space-y-6">
-      {/* Storage Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-              <HardDrive className="h-4 w-4" />
-              Almacenamiento Total
+      {/* Volume Selector and Stats */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Estadísticas de Almacenamiento
+              </CardTitle>
+              <CardDescription>
+                Información del volumen seleccionado
+              </CardDescription>
             </div>
-            <div className="text-2xl font-bold">
-              {formatBytes(overview?.total_storage_bytes || 0)}
+            <Select
+              value={selectedVolumeId?.toString() || ""}
+              onValueChange={(v) => setSelectedVolumeId(parseInt(v))}
+            >
+              <SelectTrigger className="w-[250px]">
+                <SelectValue placeholder="Seleccionar volumen" />
+              </SelectTrigger>
+              <SelectContent>
+                {overview?.volumes.map((vol) => (
+                  <SelectItem key={vol.id} value={vol.id.toString()}>
+                    <div className="flex items-center gap-2">
+                      {STORAGE_ICONS[vol.storage_type]}
+                      <span>{vol.name}</span>
+                      {vol.is_primary && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {selectedVolume ? (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Storage Usage Pie Chart */}
+              <Card className="border-0 shadow-none bg-muted/30">
+                <CardContent className="pt-4">
+                  <div className="text-sm font-medium text-center mb-2">Uso del Disco</div>
+                  <ChartContainer config={storageChartConfig} className="h-[180px]">
+                    <PieChart>
+                      <Pie
+                        data={storageChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={70}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        {storageChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                        <RechartsLabel
+                          content={({ viewBox }) => {
+                            if (viewBox && "cx" in viewBox && "cy" in viewBox) {
+                              const usagePercent = getUsagePercent(
+                                selectedVolume.used_bytes,
+                                selectedVolume.total_bytes
+                              )
+                              return (
+                                <text
+                                  x={viewBox.cx}
+                                  y={viewBox.cy}
+                                  textAnchor="middle"
+                                  dominantBaseline="middle"
+                                >
+                                  <tspan
+                                    x={viewBox.cx}
+                                    y={viewBox.cy}
+                                    className="fill-foreground text-2xl font-bold"
+                                  >
+                                    {usagePercent}%
+                                  </tspan>
+                                  <tspan
+                                    x={viewBox.cx}
+                                    y={(viewBox.cy || 0) + 18}
+                                    className="fill-muted-foreground text-xs"
+                                  >
+                                    usado
+                                  </tspan>
+                                </text>
+                              )
+                            }
+                          }}
+                        />
+                      </Pie>
+                      <ChartTooltip
+                        content={
+                          <ChartTooltipContent
+                            formatter={(value) => formatBytes(value as number)}
+                          />
+                        }
+                      />
+                    </PieChart>
+                  </ChartContainer>
+                  <div className="flex justify-center gap-4 mt-2 text-xs">
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: "hsl(var(--chart-1))" }} />
+                      <span>Usado: {formatBytes(selectedVolume.used_bytes)}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: "hsl(var(--chart-2))" }} />
+                      <span>Libre: {formatBytes((selectedVolume.total_bytes || 0) - (selectedVolume.used_bytes || 0))}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Volume Details */}
+              <Card className="border-0 shadow-none bg-muted/30">
+                <CardContent className="pt-4">
+                  <div className="text-sm font-medium text-center mb-4">Detalles del Volumen</div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Nombre:</span>
+                      <span className="font-medium">{selectedVolume.name}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Tipo:</span>
+                      <div className="flex items-center gap-1">
+                        {STORAGE_ICONS[selectedVolume.storage_type]}
+                        <span className="font-medium capitalize">{selectedVolume.storage_type}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Ruta:</span>
+                      <code className="text-xs bg-muted px-2 py-1 rounded">
+                        {selectedVolume.mount_path || "-"}
+                      </code>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Estado:</span>
+                      <Badge className={STATUS_COLORS[selectedVolume.status] || ""}>
+                        {STATUS_LABELS[selectedVolume.status] || selectedVolume.status}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Retención:</span>
+                      <span className="font-medium">{selectedVolume.retention_days} días</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Última verificación:</span>
+                      <span className="text-xs">
+                        {selectedVolume.last_checked 
+                          ? new Date(selectedVolume.last_checked).toLocaleString()
+                          : "Nunca"}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Stats Summary */}
+              <Card className="border-0 shadow-none bg-muted/30">
+                <CardContent className="pt-4">
+                  <div className="text-sm font-medium text-center mb-4">Resumen</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-background rounded-lg text-center">
+                      <HardDrive className="h-5 w-5 mx-auto mb-1 text-blue-500" />
+                      <div className="text-lg font-bold">{formatBytes(selectedVolume.total_bytes)}</div>
+                      <div className="text-xs text-muted-foreground">Capacidad Total</div>
+                    </div>
+                    <div className="p-3 bg-background rounded-lg text-center">
+                      <FolderOpen className="h-5 w-5 mx-auto mb-1 text-orange-500" />
+                      <div className="text-lg font-bold">{formatBytes(selectedVolume.used_bytes)}</div>
+                      <div className="text-xs text-muted-foreground">Espacio Usado</div>
+                    </div>
+                    <div className="p-3 bg-background rounded-lg text-center">
+                      <CheckCircle2 className="h-5 w-5 mx-auto mb-1 text-green-500" />
+                      <div className="text-lg font-bold text-green-600">
+                        {formatBytes((selectedVolume.total_bytes || 0) - (selectedVolume.used_bytes || 0))}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Espacio Libre</div>
+                    </div>
+                    <div className="p-3 bg-background rounded-lg text-center">
+                      <Film className="h-5 w-5 mx-auto mb-1 text-purple-500" />
+                      <div className="text-lg font-bold">{overview?.total_recordings || 0}</div>
+                      <div className="text-xs text-muted-foreground">Grabaciones</div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-              <FolderOpen className="h-4 w-4" />
-              Espacio Usado
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No hay volúmenes configurados
             </div>
-            <div className="text-2xl font-bold">
-              {formatBytes(overview?.total_used_bytes || 0)}
-            </div>
-            <Progress 
-              value={getUsagePercent(overview?.total_used_bytes || 0, overview?.total_storage_bytes || 0)} 
-              className="h-2 mt-2" 
-            />
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-              <CheckCircle2 className="h-4 w-4" />
-              Espacio Libre
-            </div>
-            <div className="text-2xl font-bold text-green-600">
-              {formatBytes(overview?.total_free_bytes || 0)}
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-              <Settings className="h-4 w-4" />
-              Grabaciones
-            </div>
-            <div className="text-2xl font-bold">
-              {overview?.total_recordings || 0}
-            </div>
-      </CardContent>
-        </Card>
-      </div>
+          )}
+        </CardContent>
+      </Card>
       
       {/* Cleanup Status Card */}
       <Card>

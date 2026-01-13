@@ -227,8 +227,9 @@ VALUES ('Default Tenant', 'default', 'active', 50, 10, 10, 500)
 ON CONFLICT (slug) DO NOTHING;
 
 -- Crear volumen de almacenamiento por defecto
+-- Nota: /recordings es la ruta interna del contenedor, mapeada al volumen Docker recordings_prod
 INSERT INTO storage_volumes (name, storage_type, mount_path, is_primary, is_active, status, retention_days)
-VALUES ('Local Storage', 'local', '/recordings', TRUE, TRUE, 'active', 30)
+VALUES ('Volumen Principal (Docker)', 'local', '/recordings', TRUE, TRUE, 'active', 30)
 ON CONFLICT (name) DO NOTHING;
 
 -- =============================================================================
